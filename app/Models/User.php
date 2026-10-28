@@ -6,6 +6,7 @@ use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Illuminate\Support\Carbon;
@@ -22,6 +23,8 @@ use Illuminate\Support\Carbon;
  * @property string|null $remember_token
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
+ * @property-read RoundUser $pivot
+ * @property-read int $rounds_count
  */
 #[Fillable(['name', 'email', 'password'])]
 #[Hidden(['password', 'two_factor_secret', 'two_factor_recovery_codes', 'remember_token'])]
@@ -43,10 +46,14 @@ class User extends Authenticatable
         ];
     }
 
-    public function rounds() {
-        return $this->belongsTo(Round::class)
+    /**
+     * @return BelongsToMany<Round, $this, RoundUser>
+     */
+    public function rounds(): BelongsToMany
+    {
+        return $this->belongsToMany(Round::class)
+            ->using(RoundUser::class)
             ->withPivot('chips', 'eliminated_at')
             ->withTimestamps();
     }
-
 }

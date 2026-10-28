@@ -32,7 +32,9 @@ const submit = () => form.post('/rounds');
         <p>
             <label>Total de fichas</label><br />
             <input type="number" v-model.number="form.total_chips" />
-            <span v-if="form.errors.total_chips">{{ form.errors.total_chips }}</span>
+            <span v-if="form.errors.total_chips">{{
+                form.errors.total_chips
+            }}</span>
         </p>
 
         <p>Quem vai jogar:</p>
