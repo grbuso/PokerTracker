@@ -373,7 +373,7 @@ const submit = () => {
                         Atualize as fichas dos jogadores que continuam na
                         rodada.
                     </CardDescription>
-                    <CardDescription v-else-if="isActive">
+                    <CardDescription v-else-if="isActive && activePlayers.length == 0">
                         Todos os jogadores desta rodada foram eliminados.
                     </CardDescription>
                 </CardHeader>
@@ -508,7 +508,7 @@ const submit = () => {
                     <p
                         v-else-if="!canManage"
                         class="text-sm text-muted-foreground"
-                    >
+                        >
                         Apenas o administrador pode registrar as fichas do dia.
                     </p>
                     <p v-else class="text-sm text-muted-foreground">

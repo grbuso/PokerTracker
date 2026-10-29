@@ -58,9 +58,9 @@ class RoundController extends Controller
         }
 
         $data = $request->validate([
-            'recorded_on' => ['required', 'date'],
+            'recorded_on' => ['required', 'date', 'after_or_equal:' . $round->starts_on->toDateString()],
             'chips' => ['required', 'array'],
-            'chips.*' => ['required', 'integer', 'min:0'],
+            'chips.*' => ['required', 'integer', 'min:0']
         ]);
 
         $activeIds = $round->players()
