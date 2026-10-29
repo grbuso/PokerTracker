@@ -1,6 +1,8 @@
 <?php
 
+use App\Models\Round;
 use App\Models\User;
+use Inertia\Testing\AssertableInertia as Assert;
 
 test('profile page is displayed', function () {
     $user = User::factory()->create();
@@ -9,7 +11,12 @@ test('profile page is displayed', function () {
         ->actingAs($user)
         ->get(route('profile.edit'));
 
-    $response->assertOk();
+    $response
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('settings/Profile')
+            ->where('canDeleteAccount', true)
+        );
 });
 
 test('profile information can be updated', function () {
@@ -80,6 +87,36 @@ test('correct password must be provided to delete account', function () {
     $response
         ->assertSessionHasErrors('password')
         ->assertRedirect(route('profile.edit'));
+
+    expect($user->fresh())->not->toBeNull();
+});
+
+test('administrators cannot delete their account', function () {
+    $admin = User::factory()->admin()->create();
+
+    $this->actingAs($admin)
+        ->delete(route('profile.destroy'), [
+            'password' => 'password',
+        ])
+        ->assertForbidden();
+
+    expect($admin->fresh())->not->toBeNull();
+});
+
+test('players with round history cannot delete their account', function () {
+    $user = User::factory()->create();
+    $round = Round::create([
+        'starts_on' => '2026-10-28',
+        'total_chips' => 1000,
+        'status' => 'encerrada',
+    ]);
+    $round->players()->attach($user->id, ['chips' => 1000]);
+
+    $this->actingAs($user)
+        ->delete(route('profile.destroy'), [
+            'password' => 'password',
+        ])
+        ->assertForbidden();
 
     expect($user->fresh())->not->toBeNull();
 });

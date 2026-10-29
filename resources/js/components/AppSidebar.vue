@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { Link, usePage } from '@inertiajs/vue3';
-import { Hash, LayoutGrid } from '@lucide/vue';
-import { computed } from 'vue';
+import { ChevronDown, ChevronUp, Hash, LayoutGrid, Users } from '@lucide/vue';
+import { computed, ref } from 'vue';
+import PlayerController from '@/actions/App/Http/Controllers/Admin/PlayerController';
 import RoundController from '@/actions/App/Http/Controllers/RoundController';
 import AppLogo from '@/components/AppLogo.vue';
 import NavMain from '@/components/NavMain.vue';
@@ -32,9 +33,16 @@ const currentRoundId = computed(() => {
 });
 
 const rounds = computed(() => page.props.sidebarRounds);
+const showAllRounds = ref(false);
+const visibleRounds = computed(() =>
+    showAllRounds.value ? rounds.value : rounds.value.slice(0, 5),
+);
+const hasMoreRounds = computed(() => rounds.value.length > 5);
 
 const sidebarGlow =
     'radial-gradient(ellipse 90% 50% at 50% 0%, color-mix(in srgb, var(--primary) 8%, transparent) 0%, color-mix(in srgb, var(--primary) 3%, transparent) 45%, transparent 80%)';
+
+const isAdmin = computed(() => page.props.auth.user?.is_admin ?? false);
 
 const mainNavItems = computed<NavItem[]>(() => [
     {
@@ -43,6 +51,15 @@ const mainNavItems = computed<NavItem[]>(() => [
         icon: LayoutGrid,
         isActive: onDashboard.value,
     },
+    ...(isAdmin.value
+        ? [
+              {
+                  title: 'Jogadores',
+                  href: PlayerController.index.url(),
+                  icon: Users,
+              },
+          ]
+        : []),
 ]);
 </script>
 
@@ -74,7 +91,7 @@ const mainNavItems = computed<NavItem[]>(() => [
                     <SidebarGroupLabel>Rodadas</SidebarGroupLabel>
                     <SidebarMenu>
                         <SidebarMenuItem
-                            v-for="round in rounds"
+                            v-for="round in visibleRounds"
                             :key="round.id"
                         >
                             <SidebarMenuButton
@@ -101,6 +118,28 @@ const mainNavItems = computed<NavItem[]>(() => [
                                         {{ round.starts_on }}
                                     </span>
                                 </Link>
+                            </SidebarMenuButton>
+                        </SidebarMenuItem>
+
+                        <SidebarMenuItem v-if="hasMoreRounds">
+                            <SidebarMenuButton
+                                type="button"
+                                :tooltip="
+                                    showAllRounds ? 'Ver menos' : 'Ver mais'
+                                "
+                                :aria-expanded="showAllRounds"
+                                @click="showAllRounds = !showAllRounds"
+                            >
+                                <component
+                                    :is="
+                                        showAllRounds ? ChevronUp : ChevronDown
+                                    "
+                                />
+                                <span>
+                                    {{
+                                        showAllRounds ? 'Ver menos' : 'Ver mais'
+                                    }}
+                                </span>
                             </SidebarMenuButton>
                         </SidebarMenuItem>
                     </SidebarMenu>

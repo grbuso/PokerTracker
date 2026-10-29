@@ -33,9 +33,10 @@ class RoundController extends Controller
         return redirect()->route('dashboard');
     }
 
-    public function show(Round $round): Response
+    public function show(Request $request, Round $round): Response
     {
         return Inertia::render('rounds/Show', [
+            'canManage' => $request->user()->can('manage-game'),
             'round' => $round->load([
                 'players' => fn ($query) => $query->orderBy('name'),
             ]),
@@ -95,5 +96,38 @@ class RoundController extends Controller
         ]);
 
         return back();
+    }
+
+    public function close(Round $round): RedirectResponse
+    {
+        if ($round->status !== 'ativa') {
+            Inertia::flash('toast', [
+                'type' => 'error',
+                'message' => __('Rodada já está encerrada.'),
+            ]);
+
+            return back();
+        }
+
+        $round->update(['status' => 'encerrada']);
+
+        Inertia::flash('toast', [
+            'type' => 'success',
+            'message' => __('Rodada encerrada com sucesso.'),
+        ]);
+
+        return back();
+    }
+
+    public function destroy(Round $round): RedirectResponse
+    {
+        $round->delete();
+
+        Inertia::flash('toast', [
+            'type' => 'success',
+            'message' => __('Rodada removida com sucesso.'),
+        ]);
+
+        return redirect()->route('dashboard');
     }
 }

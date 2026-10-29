@@ -15,15 +15,15 @@ class StoreRoundRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'total_chips'       => ['required', 'integer', 'min:1'],
-            'chips_per_player'  => ['required', 'integer', 'min:1'],
-            'user_ids'          => ['required', 'array', 'min:2'],
-            'user_ids.*'        => ['exists:users,id'],
+            'total_chips' => ['required', 'integer', 'min:1'],
+            'chips_per_player' => ['required', 'integer', 'min:1'],
+            'user_ids' => ['required', 'array', 'min:2'],
+            'user_ids.*' => ['exists:users,id'],
         ];
     }
 
     public function authorize(): bool
     {
-        return true;
+        return $this->user()?->can('manage-game') ?? false;
     }
 }

@@ -1,6 +1,14 @@
 <script setup lang="ts">
-import { Head, Link, useForm } from '@inertiajs/vue3';
-import { computed, watch } from 'vue';
+import { Head, Link, router, useForm } from '@inertiajs/vue3';
+import {
+    CalendarDays,
+    Flag,
+    Trash2,
+    Trophy,
+    UserX,
+    Users,
+} from '@lucide/vue';
+import { computed, ref, watch } from 'vue';
 import RoundController from '@/actions/App/Http/Controllers/RoundController';
 import ChipTrendChart from '@/components/ChipTrendChart.vue';
 import InputError from '@/components/InputError.vue';
@@ -13,6 +21,15 @@ import {
     CardHeader,
     CardTitle,
 } from '@/components/ui/card';
+import {
+    Dialog,
+    DialogClose,
+    DialogContent,
+    DialogDescription,
+    DialogFooter,
+    DialogHeader,
+    DialogTitle,
+} from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { dashboard } from '@/routes';
 
@@ -29,6 +46,7 @@ type Snapshot = {
 };
 
 const props = defineProps<{
+    canManage: boolean;
     round: {
         id: number;
         starts_on: string | null;
@@ -128,6 +146,54 @@ const formatDay = (day: string): string => {
     return month && date ? `${date}/${month}` : day;
 };
 
+const chipFormatter = new Intl.NumberFormat('pt-BR');
+const formatChips = (chips: number): string => chipFormatter.format(chips);
+
+const eliminatedCount = computed(
+    () => props.round.players.length - activePlayers.value.length,
+);
+
+const leader = computed(() => {
+    if (activePlayers.value.length === 0) {
+        return null;
+    }
+
+    const topChips = Math.max(
+        ...activePlayers.value.map((player) => player.pivot.chips),
+    );
+    const leaders = activePlayers.value.filter(
+        (player) => player.pivot.chips === topChips,
+    );
+
+    return {
+        name: leaders.length > 1 ? 'Empate' : leaders[0].name,
+        chips: topChips,
+        tied: leaders.length > 1,
+        count: leaders.length,
+    };
+});
+
+const lastSnapshotOn = computed(() => {
+    const last = days.value[days.value.length - 1];
+
+    return last ? formatDay(last) : null;
+});
+
+const closeOpen = ref(false);
+const deleteOpen = ref(false);
+
+const closeRound = () => {
+    closeOpen.value = false;
+    router.post(RoundController.close.url(props.round.id), {
+        preserveScroll: true,
+    });
+};
+
+const deleteRound = () => {
+    deleteOpen.value = false;
+    router.delete(RoundController.destroy.url(props.round.id));
+};
+
 const submit = () => {
     if (!isActive.value) {
         return;
@@ -156,22 +222,154 @@ const submit = () => {
                     </Badge>
                 </div>
                 <p class="text-sm text-muted-foreground">
-                    Total de fichas: {{ round.total_chips }}
+                    Total de fichas: {{ formatChips(round.total_chips) }}
                 </p>
             </div>
 
-            <Button as-child>
-                <Link :href="dashboard()">Voltar ao dashboard</Link>
-            </Button>
+            <div class="flex flex-wrap items-center gap-2">
+                <Button as-child variant="outline">
+                    <Link :href="dashboard()">Voltar ao dashboard</Link>
+                </Button>
+
+                <template v-if="canManage">
+                    <Button
+                        v-if="isActive"
+                        type="button"
+                        variant="outline"
+                        @click="closeOpen = true"
+                    >
+                        <Flag class="size-4" />
+                        Encerrar rodada
+                    </Button>
+                    <Button
+                        type="button"
+                        variant="destructive"
+                        @click="deleteOpen = true"
+                    >
+                        <Trash2 class="size-4" />
+                        Excluir rodada
+                    </Button>
+                </template>
+            </div>
+        </div>
+
+        <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <Card class="py-0">
+                <CardContent class="flex items-center gap-4 p-4">
+                    <div
+                        class="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary"
+                    >
+                        <Trophy class="size-5" />
+                    </div>
+                    <div class="min-w-0 space-y-0.5">
+                        <p
+                            class="text-xs font-medium tracking-wide text-muted-foreground uppercase"
+                        >
+                            Líder
+                        </p>
+                        <p class="truncate text-2xl leading-tight font-semibold">
+                            {{ leader?.name ?? '—' }}
+                        </p>
+                        <p class="truncate text-xs text-muted-foreground">
+                            {{
+                                leader
+                                    ? `${formatChips(leader.chips)} fichas`
+                                    : 'Sem jogadores ativos'
+                            }}
+                        </p>
+                    </div>
+                </CardContent>
+            </Card>
+
+            <Card class="py-0">
+                <CardContent class="flex items-center gap-4 p-4">
+                    <div
+                        class="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary"
+                    >
+                        <Users class="size-5" />
+                    </div>
+                    <div class="min-w-0 space-y-0.5">
+                        <p
+                            class="text-xs font-medium tracking-wide text-muted-foreground uppercase"
+                        >
+                            Ativos
+                        </p>
+                        <p class="text-2xl leading-tight font-semibold">
+                            {{ activePlayers.length }}
+                        </p>
+                        <p class="truncate text-xs text-muted-foreground">
+                            Jogadores na mesa
+                        </p>
+                    </div>
+                </CardContent>
+            </Card>
+
+            <Card class="py-0">
+                <CardContent class="flex items-center gap-4 p-4">
+                    <div
+                        class="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary"
+                    >
+                        <UserX class="size-5" />
+                    </div>
+                    <div class="min-w-0 space-y-0.5">
+                        <p
+                            class="text-xs font-medium tracking-wide text-muted-foreground uppercase"
+                        >
+                            Eliminados
+                        </p>
+                        <p class="text-2xl leading-tight font-semibold">
+                            {{ eliminatedCount }}
+                        </p>
+                        <p class="truncate text-xs text-muted-foreground">
+                            Fora da rodada
+                        </p>
+                    </div>
+                </CardContent>
+            </Card>
+
+            <Card class="py-0">
+                <CardContent class="flex items-center gap-4 p-4">
+                    <div
+                        class="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary"
+                    >
+                        <CalendarDays class="size-5" />
+                    </div>
+                    <div class="min-w-0 space-y-0.5">
+                        <p
+                            class="text-xs font-medium tracking-wide text-muted-foreground uppercase"
+                        >
+                            Dias registrados
+                        </p>
+                        <p class="text-2xl leading-tight font-semibold">
+                            {{ days.length }}
+                        </p>
+                        <p class="truncate text-xs text-muted-foreground">
+                            {{
+                                lastSnapshotOn
+                                    ? `Último registro: ${lastSnapshotOn}`
+                                    : 'Nenhum lançamento'
+                            }}
+                        </p>
+                    </div>
+                </CardContent>
+            </Card>
         </div>
 
         <div class="grid gap-4 xl:grid-cols-2">
             <Card>
                 <CardHeader>
                     <CardTitle>
-                        {{ isActive ? 'Registrar o dia' : 'Rodada encerrada' }}
+                        {{
+                            isActive
+                                ? canManage
+                                    ? 'Registrar o dia'
+                                    : 'Rodada em andamento'
+                                : 'Rodada encerrada'
+                        }}
                     </CardTitle>
-                    <CardDescription v-if="isActive && activePlayers.length">
+                    <CardDescription
+                        v-if="isActive && activePlayers.length && canManage"
+                    >
                         Atualize as fichas dos jogadores que continuam na
                         rodada.
                     </CardDescription>
@@ -182,7 +380,7 @@ const submit = () => {
 
                 <CardContent>
                     <form
-                        v-if="isActive && activePlayers.length"
+                        v-if="canManage && isActive && activePlayers.length"
                         class="space-y-4"
                         @submit.prevent="submit"
                     >
@@ -258,7 +456,7 @@ const submit = () => {
                                                 type="number"
                                                 inputmode="numeric"
                                                 min="0"
-                                                class="h-8 w-24 rounded-md border border-input bg-transparent px-2 text-right text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                                                class="h-8 w-24 rounded-md border border-input bg-transparent px-2 text-center text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
                                             />
                                             <Badge
                                                 v-else
@@ -305,7 +503,13 @@ const submit = () => {
                         v-else-if="!isActive"
                         class="text-sm text-muted-foreground"
                     >
-                        Rodada encerrada. O histórico fica só para consulta.
+                        Não é possível alterar dados de rodadas encerradas.
+                    </p>
+                    <p
+                        v-else-if="!canManage"
+                        class="text-sm text-muted-foreground"
+                    >
+                        Apenas o administrador pode registrar as fichas do dia.
                     </p>
                     <p v-else class="text-sm text-muted-foreground">
                         Crie uma nova rodada no dashboard para continuar.
@@ -337,7 +541,7 @@ const submit = () => {
                                     <th
                                         v-for="day in days"
                                         :key="day"
-                                        class="px-3 py-2 text-right font-medium"
+                                        class="px-3 py-2 text-center font-medium"
                                     >
                                         {{ formatDay(day) }}
                                     </th>
@@ -368,7 +572,7 @@ const submit = () => {
                                     <td
                                         v-for="day in days"
                                         :key="day"
-                                        class="px-3 py-2 text-right"
+                                        class="px-3 py-2 text-center"
                                     >
                                         {{ cell(player.id, day) }}
                                     </td>
@@ -400,5 +604,47 @@ const submit = () => {
                 />
             </CardContent>
         </Card>
+
+        <Dialog v-model:open="closeOpen">
+            <DialogContent>
+                <DialogHeader>
+                    <DialogTitle>
+                        Encerrar a rodada #{{ round.id }}?
+                    </DialogTitle>
+                    <DialogDescription>
+                        Depois de encerrada, não será possível registrar novas
+                        fichas. O histórico continua disponível para consulta.
+                    </DialogDescription>
+                </DialogHeader>
+                <DialogFooter>
+                    <DialogClose as-child>
+                        <Button variant="outline">Cancelar</Button>
+                    </DialogClose>
+                    <Button @click="closeRound">Encerrar</Button>
+                </DialogFooter>
+            </DialogContent>
+        </Dialog>
+
+        <Dialog v-model:open="deleteOpen">
+            <DialogContent>
+                <DialogHeader>
+                    <DialogTitle>
+                        Excluir a rodada #{{ round.id }}?
+                    </DialogTitle>
+                    <DialogDescription>
+                        O histórico, os jogadores e os snapshots dessa rodada
+                        serão apagados. Essa ação não pode ser desfeita.
+                    </DialogDescription>
+                </DialogHeader>
+                <DialogFooter>
+                    <DialogClose as-child>
+                        <Button variant="outline">Cancelar</Button>
+                    </DialogClose>
+                    <Button variant="destructive" @click="deleteRound">
+                        Excluir
+                    </Button>
+                </DialogFooter>
+            </DialogContent>
+        </Dialog>
     </div>
 </template>

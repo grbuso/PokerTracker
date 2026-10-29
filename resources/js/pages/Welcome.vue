@@ -84,7 +84,7 @@ const heroGlow =
                     <template v-else>
                         <Button as-child size="lg" class="w-full sm:w-auto">
                             <Link :href="register()">
-                                Sentar na mesa
+                                Comece a monitorar
                                 <ArrowRight class="size-4" />
                             </Link>
                         </Button>

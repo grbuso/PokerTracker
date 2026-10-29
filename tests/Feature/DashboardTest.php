@@ -38,6 +38,7 @@ test('dashboard shows the active round players and snapshot history', function (
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page
             ->component('Dashboard')
+            ->where('canManage', false)
             ->where('activeRound.id', $round->id)
             ->where('activeRound.players.0.name', 'Ana')
             ->where('activeRound.players.0.chips', 400)
@@ -132,5 +133,17 @@ test('ranking computes win rate and most recent winning streak', function () {
             ->where('ranking.3.name', 'Zed')
             ->where('ranking.3.win_rate', null)
             ->where('ranking.3.streak', 0)
+        );
+});
+
+test('administrators can manage the game from the dashboard', function () {
+    $admin = User::factory()->admin()->create();
+
+    $this->actingAs($admin)
+        ->get(route('dashboard'))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('Dashboard')
+            ->where('canManage', true)
         );
 });

@@ -2,15 +2,18 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\ChipSnapshot;
 use App\Models\Round;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 use Inertia\Inertia;
 use Inertia\Response;
 
 class DashboardController extends Controller
 {
-    public function index(): Response
+    public function index(Request $request): Response
     {
         $rounds = Round::query()
             ->with(['players' => fn ($query) => $query->orderByDesc('round_user.chips')])
@@ -18,9 +21,19 @@ class DashboardController extends Controller
             ->get();
 
         $activeRound = $rounds->firstWhere('status', 'ativa');
+        $users = User::query()->orderBy('name')->get(['id', 'name']);
+        $lastSnapshotOn = ChipSnapshot::query()->max('recorded_on');
 
         return Inertia::render('Dashboard', [
-            'users' => User::query()->orderBy('name')->get(['id', 'name']),
+            'canManage' => $request->user()->can('manage-game'),
+            'users' => $users,
+            'stats' => [
+                'total_players' => $users->count(),
+                'total_rounds' => $rounds->count(),
+                'closed_rounds' => $rounds->where('status', 'encerrada')->count(),
+                'chips_in_play' => $activeRound?->total_chips ?? 0,
+                'last_snapshot_on' => $lastSnapshotOn ? Carbon::parse($lastSnapshotOn)->format('d/m/Y') : null,
+            ],
             'activeRound' => $activeRound ? $this->activeRoundData($activeRound) : null,
             'rounds' => $rounds->map(fn (Round $round) => [
                 'id' => $round->id,
@@ -40,22 +53,17 @@ class DashboardController extends Controller
      */
     private function activeRoundData(Round $round): array
     {
+        $lastSnapshotOn = $round->snapshots()->max('recorded_on');
+
         return [
             'id' => $round->id,
             'starts_on' => $round->starts_on->format('d/m/Y'),
             'total_chips' => $round->total_chips,
-            'players' => $round->players
-                ->sortBy('chips')
-                ->values()
-                ->map(fn (User $user) => [
-                    'id' => $user->id,
-                    'name' => $user->name,
-                    'chips' => (int) $user->pivot->chips,
-                    'eliminated_at' => $user->pivot->eliminated_at,
-                ]),
-            'snapshots' => $round->snapshots()
-                ->orderBy('recorded_on')
-                ->get(['user_id', 'recorded_on', 'chips']),
+            'players_count' => $round->players->count(),
+            'active_players_count' => $round->players
+                ->filter(fn (User $user) => $user->pivot->eliminated_at === null)
+                ->count(),
+            'last_snapshot_on' => $lastSnapshotOn ? Carbon::parse($lastSnapshotOn)->format('d/m/Y') : null,
         ];
     }
 

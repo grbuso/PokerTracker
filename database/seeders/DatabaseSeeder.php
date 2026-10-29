@@ -15,11 +15,31 @@ class DatabaseSeeder extends Seeder
      */
     public function run(): void
     {
-        // User::factory(10)->create();
+        $email = config('admin.email');
 
-        User::factory()->create([
-            'name' => 'Test User',
-            'email' => 'test@example.com',
-        ]);
+        if (blank($email)) {
+            $this->command?->warn('ADMIN_EMAIL não configurado. Nenhum administrador foi criado.');
+
+            return;
+        }
+
+        $user = User::query()->firstOrNew(['email' => $email]);
+        $user->name = $user->exists ? $user->name : config('admin.name');
+        $user->email_verified_at ??= now();
+        $user->is_admin = true;
+
+        if (! $user->exists) {
+            $password = config('admin.password');
+
+            if (blank($password)) {
+                $this->command?->warn('Defina ADMIN_PASSWORD para criar a conta de administrador.');
+
+                return;
+            }
+
+            $user->password = $password;
+        }
+
+        $user->save();
     }
 }

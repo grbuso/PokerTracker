@@ -21,13 +21,14 @@ test('round show page loads the requested round players', function () {
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page
             ->component('rounds/Show')
+            ->where('canManage', false)
             ->where('round.id', $round->id)
             ->where('round.players.0.name', 'Ana')
         );
 });
 
 test('a daily snapshot updates chips and eliminates players at zero', function () {
-    $user = User::factory()->create();
+    $user = User::factory()->admin()->create();
     $player = User::factory()->create();
     $round = Round::create([
         'starts_on' => '2026-10-28',
@@ -53,7 +54,7 @@ test('a daily snapshot updates chips and eliminates players at zero', function (
 });
 
 test('a snapshot ignores players eliminated from the round', function () {
-    $user = User::factory()->create();
+    $user = User::factory()->admin()->create();
     $player = User::factory()->create();
     $round = Round::create([
         'starts_on' => '2026-10-28',
@@ -76,7 +77,7 @@ test('a snapshot ignores players eliminated from the round', function () {
 });
 
 test('a closed round cannot receive new snapshots', function () {
-    $user = User::factory()->create();
+    $user = User::factory()->admin()->create();
     $player = User::factory()->create();
     $round = Round::create([
         'starts_on' => '2026-10-28',
@@ -100,7 +101,7 @@ test('a closed round cannot receive new snapshots', function () {
 });
 
 test('creating a round closes the previous active round', function () {
-    $user = User::factory()->create();
+    $user = User::factory()->admin()->create();
     $firstPlayer = User::factory()->create();
     $secondPlayer = User::factory()->create();
     $activeRound = Round::create([
@@ -126,4 +127,80 @@ test('creating a round closes the previous active round', function () {
         ->and($newRound->id)->not->toBe($activeRound->id)
         ->and($newRound->players()->count())->toBe(2)
         ->and($newRound->players()->first()->pivot->chips)->toBe(500);
+});
+
+test('players cannot create rounds', function () {
+    $user = User::factory()->create();
+    $firstPlayer = User::factory()->create();
+    $secondPlayer = User::factory()->create();
+
+    $this->actingAs($user)
+        ->post(route('rounds.store'), [
+            'total_chips' => 1000,
+            'chips_per_player' => 500,
+            'user_ids' => [$firstPlayer->id, $secondPlayer->id],
+        ])
+        ->assertForbidden();
+
+    expect(Round::query()->count())->toBe(0);
+});
+
+test('players cannot record snapshots', function () {
+    $user = User::factory()->create();
+    $player = User::factory()->create();
+    $round = Round::create([
+        'starts_on' => '2026-10-28',
+        'total_chips' => 1000,
+        'status' => 'ativa',
+    ]);
+    $round->players()->attach($player->id, ['chips' => 500]);
+
+    $this->actingAs($user)
+        ->post(route('rounds.snapshots.store', $round), [
+            'recorded_on' => '2026-10-29',
+            'chips' => [$player->id => 0],
+        ])
+        ->assertForbidden();
+
+    expect(ChipSnapshot::query()->count())->toBe(0)
+        ->and($round->players()->first()->pivot->chips)->toBe(500);
+});
+
+test('players cannot delete rounds', function () {
+    $user = User::factory()->create();
+    $round = Round::create([
+        'starts_on' => '2026-10-28',
+        'total_chips' => 1000,
+        'status' => 'ativa',
+    ]);
+
+    $this->actingAs($user)
+        ->delete(route('rounds.destroy', $round))
+        ->assertForbidden();
+
+    expect(Round::query()->count())->toBe(1);
+});
+
+test('admins can delete a round and its history', function () {
+    $admin = User::factory()->admin()->create();
+    $player = User::factory()->create();
+    $round = Round::create([
+        'starts_on' => '2026-10-28',
+        'total_chips' => 1000,
+        'status' => 'encerrada',
+    ]);
+    $round->players()->attach($player->id, ['chips' => 1000]);
+    $round->snapshots()->create([
+        'user_id' => $player->id,
+        'recorded_on' => '2026-10-28',
+        'chips' => 1000,
+    ]);
+
+    $this->actingAs($admin)
+        ->delete(route('rounds.destroy', $round))
+        ->assertRedirect(route('dashboard'));
+
+    expect(Round::query()->count())->toBe(0)
+        ->and(ChipSnapshot::query()->count())->toBe(0)
+        ->and($player->rounds()->count())->toBe(0);
 });
