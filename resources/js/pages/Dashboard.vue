@@ -1,7 +1,10 @@
 <script setup lang="ts">
-import { Head, Link, useForm } from '@inertiajs/vue3';
-import { computed, watch } from 'vue';
+import { Head, router, useForm } from '@inertiajs/vue3';
+import { CalendarDays, ChevronRight, Flag, Trophy, Users } from '@lucide/vue';
+import { computed, ref, watch } from 'vue';
 import RoundController from '@/actions/App/Http/Controllers/RoundController';
+import ChipTrendChart from '@/components/ChipTrendChart.vue';
+import InputError from '@/components/InputError.vue';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -11,7 +14,15 @@ import {
     CardHeader,
     CardTitle,
 } from '@/components/ui/card';
-import InputError from '@/components/InputError.vue';
+import {
+    Dialog,
+    DialogClose,
+    DialogContent,
+    DialogDescription,
+    DialogFooter,
+    DialogHeader,
+    DialogTitle,
+} from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { dashboard } from '@/routes';
 
@@ -43,6 +54,7 @@ type RoundSummary = {
     status: string;
     players_count: number;
     winner: string | null;
+    tie: boolean;
 };
 
 type RankingEntry = {
@@ -50,7 +62,8 @@ type RankingEntry = {
     name: string;
     wins: number;
     rounds_played: number;
-    current_chips: number | null;
+    win_rate: number | null;
+    streak: number;
 };
 
 const props = defineProps<{
@@ -68,6 +81,8 @@ defineOptions({
                 href: dashboard(),
             },
         ],
+        transparentHeader: true,
+        backdrop: true,
     },
 });
 
@@ -110,6 +125,19 @@ const snapshotTotal = computed(() =>
     ),
 );
 
+const snapshotMatches = computed(
+    () =>
+        props.activeRound !== null &&
+        snapshotTotal.value === props.activeRound.total_chips,
+);
+
+const canSaveSnapshot = computed(
+    () =>
+        props.activeRound !== null &&
+        activePlayers.value.length > 0 &&
+        snapshotMatches.value,
+);
+
 const snapshotDays = computed(() => [
     ...new Set(
         (props.activeRound?.snapshots ?? []).map(
@@ -137,7 +165,7 @@ const formatDay = (day: string): string => {
 };
 
 const submitSnapshot = () => {
-    if (!props.activeRound) {
+    if (!props.activeRound || !canSaveSnapshot.value) {
         return;
     }
 
@@ -149,72 +177,200 @@ const submitSnapshot = () => {
 const createForm = useForm({
     total_chips: 1000,
     chips_per_player: 0,
-    user_ids: [] as number[],
+    user_ids: props.users.map((user) => user.id),
 });
+
+const selectedPlayersCount = computed(() => createForm.user_ids.length);
+
+const chipsPerPlayer = computed(() =>
+    selectedPlayersCount.value > 0
+        ? Math.floor(createForm.total_chips / selectedPlayersCount.value)
+        : 0,
+);
+
+const chipsRemainder = computed(() =>
+    selectedPlayersCount.value > 0
+        ? createForm.total_chips % selectedPlayersCount.value
+        : 0,
+);
+
+const canCreateRound = computed(
+    () =>
+        createForm.total_chips >= 1 &&
+        selectedPlayersCount.value >= 2 &&
+        chipsPerPlayer.value >= 1,
+);
 
 watch(
     () => [createForm.total_chips, createForm.user_ids.length],
     () => {
-        createForm.chips_per_player = createForm.user_ids.length
-            ? Math.floor(createForm.total_chips / createForm.user_ids.length)
-            : 0;
+        createForm.chips_per_player = chipsPerPlayer.value;
     },
+    { immediate: true },
 );
 
+const confirmCreateOpen = ref(false);
+
 const submitCreate = () => {
-    createForm.post(RoundController.store.url(), {
-        preserveScroll: true,
-        onSuccess: () => createForm.reset(),
-    });
+    createForm
+        .transform((data) => ({
+            ...data,
+            chips_per_player: chipsPerPlayer.value,
+        }))
+        .post(RoundController.store.url(), {
+            preserveScroll: true,
+            onSuccess: () => createForm.reset(),
+        });
+};
+
+const requestCreate = () => {
+    if (!canCreateRound.value) {
+        return;
+    }
+
+    if (props.activeRound) {
+        confirmCreateOpen.value = true;
+
+        return;
+    }
+
+    submitCreate();
+};
+
+const confirmCreate = () => {
+    confirmCreateOpen.value = false;
+    submitCreate();
 };
 
 const closedRoundsCount = computed(
     () => props.rounds.filter((round) => round.status === 'encerrada').length,
 );
+
+const totalRoundsLabel = computed(
+    () =>
+        `${props.rounds.length} ${
+            props.rounds.length === 1 ? 'rodada' : 'rodadas'
+        } no total`,
+);
+
+const leaderWins = computed(() =>
+    Math.max(0, ...props.ranking.map((entry) => entry.wins)),
+);
+
+const leaderCount = computed(
+    () =>
+        props.ranking.filter(
+            (entry) => entry.wins === leaderWins.value && entry.wins > 0,
+        ).length,
+);
+
+const isLeader = (entry: RankingEntry): boolean =>
+    leaderWins.value > 0 && entry.wins === leaderWins.value;
+
+const chipFormatter = new Intl.NumberFormat('pt-BR');
+const percentFormatter = new Intl.NumberFormat('pt-BR', {
+    maximumFractionDigits: 1,
+});
+
+const formatChips = (chips: number): string => chipFormatter.format(chips);
+const formatPercent = (value: number): string =>
+    `${percentFormatter.format(value)}%`;
+
+const roundStatusLabel = (status: string): string =>
+    status === 'ativa' ? 'Em andamento' : 'Encerrada';
+
+const roundStatusClass = (status: string): string =>
+    status === 'ativa'
+        ? 'border-emerald-500/20 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400'
+        : 'border-border bg-muted text-muted-foreground';
+
+const playerStatusClass = (eliminated: boolean): string =>
+    eliminated
+        ? 'border-destructive/20 bg-destructive/10 text-destructive'
+        : 'border-emerald-500/20 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400';
+
+const visitRound = (roundId: number) => {
+    router.visit(RoundController.show.url(roundId));
+};
 </script>
 
 <template>
     <Head title="Dashboard" />
 
-    <div class="flex h-full flex-1 flex-col gap-4 overflow-x-auto p-4">
+    <div
+        class="relative isolate flex h-full flex-1 flex-col gap-4 overflow-x-auto p-4"
+    >
         <div class="grid auto-rows-min gap-4 md:grid-cols-3">
-            <Card>
-                <CardHeader class="pb-2">
-                    <CardDescription>Rodada ativa</CardDescription>
-                    <CardTitle class="text-2xl">
-                        {{ activeRound ? `#${activeRound.id}` : 'Nenhuma' }}
-                    </CardTitle>
-                </CardHeader>
-                <CardContent class="text-sm text-muted-foreground">
-                    <span v-if="activeRound">
-                        {{ activeRound.starts_on }} ·
-                        {{ activeRound.total_chips }} fichas
-                    </span>
-                    <span v-else>Crie uma rodada para começar.</span>
+            <Card class="py-0">
+                <CardContent class="flex items-center gap-4 p-4">
+                    <div
+                        class="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary"
+                    >
+                        <CalendarDays class="size-5" />
+                    </div>
+                    <div class="min-w-0 space-y-0.5">
+                        <p
+                            class="text-xs font-medium tracking-wide text-muted-foreground uppercase"
+                        >
+                            Rodada ativa
+                        </p>
+                        <p class="text-2xl leading-tight font-semibold">
+                            {{ activeRound ? `#${activeRound.id}` : 'Nenhuma' }}
+                        </p>
+                        <p class="truncate text-xs text-muted-foreground">
+                            <span v-if="activeRound">
+                                {{ formatChips(activeRound.total_chips) }}
+                                fichas · desde {{ activeRound.starts_on }}
+                            </span>
+                            <span v-else>Abra a mesa.</span>
+                        </p>
+                    </div>
                 </CardContent>
             </Card>
 
-            <Card>
-                <CardHeader class="pb-2">
-                    <CardDescription>Jogadores ativos</CardDescription>
-                    <CardTitle class="text-2xl">
-                        {{ activePlayers.length }}
-                    </CardTitle>
-                </CardHeader>
-                <CardContent class="text-sm text-muted-foreground">
-                    Quem chegar a zero está eliminado.
+            <Card class="py-0">
+                <CardContent class="flex items-center gap-4 p-4">
+                    <div
+                        class="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary"
+                    >
+                        <Users class="size-5" />
+                    </div>
+                    <div class="min-w-0 space-y-0.5">
+                        <p
+                            class="text-xs font-medium tracking-wide text-muted-foreground uppercase"
+                        >
+                            Jogadores ativos
+                        </p>
+                        <p class="text-2xl leading-tight font-semibold">
+                            {{ activePlayers.length }}
+                        </p>
+                        <p class="truncate text-xs text-muted-foreground">
+                            O resto volta a trabalhar
+                        </p>
+                    </div>
                 </CardContent>
             </Card>
 
-            <Card>
-                <CardHeader class="pb-2">
-                    <CardDescription>Rodadas encerradas</CardDescription>
-                    <CardTitle class="text-2xl">
-                        {{ closedRoundsCount }}
-                    </CardTitle>
-                </CardHeader>
-                <CardContent class="text-sm text-muted-foreground">
-                    {{ rounds.length }} rodadas registradas.
+            <Card class="py-0">
+                <CardContent class="flex items-center gap-4 p-4">
+                    <div
+                        class="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary"
+                    >
+                        <Flag class="size-5" />
+                    </div>
+                    <div class="min-w-0 space-y-0.5">
+                        <p
+                            class="text-xs font-medium tracking-wide text-muted-foreground uppercase"
+                        >
+                            Rodadas encerradas
+                        </p>
+                        <p class="text-2xl leading-tight font-semibold">
+                            {{ closedRoundsCount }}
+                        </p>
+                        <p class="truncate text-xs text-muted-foreground">
+                            {{ totalRoundsLabel }}
+                        </p>
+                    </div>
                 </CardContent>
             </Card>
         </div>
@@ -224,10 +380,10 @@ const closedRoundsCount = computed(
                 <CardHeader>
                     <CardTitle>Atualizar rodada atual</CardTitle>
                     <CardDescription v-if="activeRound">
-                        Registre as fichas de hoje. Quem ficar com zero sai.
+                        Registre as fichas de hoje.
                     </CardDescription>
                     <CardDescription v-else>
-                        Nenhuma rodada ativa no momento.
+                        Sem rodada ativa. Abra a mesa ao lado.
                     </CardDescription>
                 </CardHeader>
 
@@ -253,9 +409,9 @@ const closedRoundsCount = computed(
                             <p
                                 class="pb-2 text-sm"
                                 :class="
-                                    snapshotTotal === activeRound.total_chips
-                                        ? 'text-muted-foreground'
-                                        : 'text-amber-600 dark:text-amber-400'
+                                    snapshotMatches
+                                        ? 'text-emerald-600 dark:text-emerald-400'
+                                        : 'text-destructive'
                                 "
                             >
                                 Soma: {{ snapshotTotal }} /
@@ -285,9 +441,22 @@ const closedRoundsCount = computed(
                                         v-for="player in activeRound.players"
                                         :key="player.id"
                                         class="border-t"
+                                        :class="
+                                            player.eliminated_at
+                                                ? 'text-muted-foreground'
+                                                : ''
+                                        "
                                     >
                                         <td class="px-3 py-2">
-                                            {{ player.name }}
+                                            <span
+                                                :class="
+                                                    player.eliminated_at
+                                                        ? 'line-through'
+                                                        : ''
+                                                "
+                                            >
+                                                {{ player.name }}
+                                            </span>
                                         </td>
                                         <td class="px-3 py-2">
                                             <input
@@ -298,6 +467,7 @@ const closedRoundsCount = computed(
                                                     ]
                                                 "
                                                 type="number"
+                                                inputmode="numeric"
                                                 min="0"
                                                 class="h-8 w-24 rounded-md border border-input bg-transparent px-2 text-right text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
                                             />
@@ -310,10 +480,13 @@ const closedRoundsCount = computed(
                                         </td>
                                         <td class="px-3 py-2">
                                             <Badge
-                                                :variant="
-                                                    player.eliminated_at
-                                                        ? 'outline'
-                                                        : 'secondary'
+                                                variant="outline"
+                                                :class="
+                                                    playerStatusClass(
+                                                        Boolean(
+                                                            player.eliminated_at,
+                                                        ),
+                                                    )
                                                 "
                                             >
                                                 {{
@@ -334,13 +507,12 @@ const closedRoundsCount = computed(
                             class="flex flex-wrap items-center justify-between gap-3"
                         >
                             <p class="text-xs text-muted-foreground">
-                                Quem ficar com zero é eliminado automaticamente.
+                                Zero é eliminação automática.
                             </p>
                             <Button
                                 type="submit"
                                 :disabled="
-                                    snapshotForm.processing ||
-                                    activePlayers.length === 0
+                                    snapshotForm.processing || !canSaveSnapshot
                                 "
                             >
                                 Salvar dia
@@ -377,9 +549,22 @@ const closedRoundsCount = computed(
                                             v-for="player in activeRound.players"
                                             :key="player.id"
                                             class="border-t"
+                                            :class="
+                                                player.eliminated_at
+                                                    ? 'text-muted-foreground'
+                                                    : ''
+                                            "
                                         >
                                             <td class="px-3 py-2">
-                                                {{ player.name }}
+                                                <span
+                                                    :class="
+                                                        player.eliminated_at
+                                                            ? 'line-through'
+                                                            : ''
+                                                    "
+                                                >
+                                                    {{ player.name }}
+                                                </span>
                                             </td>
                                             <td
                                                 v-for="day in snapshotDays"
@@ -406,19 +591,23 @@ const closedRoundsCount = computed(
             <Card>
                 <CardHeader>
                     <CardTitle>Criar rodada</CardTitle>
-                    <CardDescription>
-                        Ao criar uma nova rodada, a rodada ativa é encerrada.
+                    <CardDescription v-if="activeRound">
+                        A nova rodada encerra a #{{ activeRound.id }}.
+                    </CardDescription>
+                    <CardDescription v-else>
+                        Defina o total e quem senta à mesa.
                     </CardDescription>
                 </CardHeader>
 
                 <CardContent>
-                    <form class="space-y-4" @submit.prevent="submitCreate">
+                    <form class="space-y-4" @submit.prevent="requestCreate">
                         <div class="grid gap-2">
                             <Label for="total_chips">Total de fichas</Label>
                             <input
                                 id="total_chips"
                                 v-model.number="createForm.total_chips"
                                 type="number"
+                                inputmode="numeric"
                                 min="1"
                                 class="h-9 rounded-md border border-input bg-transparent px-3 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
                             />
@@ -427,35 +616,47 @@ const closedRoundsCount = computed(
                             />
                         </div>
 
-                        <div class="grid gap-4 sm:grid-cols-2">
-                            <div class="grid gap-2">
-                                <Label for="chips_per_player">
-                                    Fichas por jogador
-                                </Label>
-                                <input
-                                    id="chips_per_player"
-                                    v-model.number="createForm.chips_per_player"
-                                    type="number"
-                                    min="1"
-                                    class="h-9 rounded-md border border-input bg-transparent px-3 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
-                                />
-                                <InputError
-                                    :message="
-                                        createForm.errors.chips_per_player
-                                    "
-                                />
+                        <div class="rounded-lg border bg-muted/30 p-3 text-sm">
+                            <div
+                                class="flex flex-wrap items-center justify-between gap-2"
+                            >
+                                <span
+                                    v-if="selectedPlayersCount >= 2"
+                                    class="font-medium"
+                                >
+                                    {{ chipsPerPlayer }} por jogador
+                                </span>
+                                <span v-else class="text-muted-foreground">
+                                    Escolha pelo menos 2 jogadores
+                                </span>
+                                <span class="text-muted-foreground">
+                                    {{ selectedPlayersCount }}
+                                    {{
+                                        selectedPlayersCount === 1
+                                            ? 'selecionado'
+                                            : 'selecionados'
+                                    }}
+                                </span>
                             </div>
-                            <div class="grid gap-2">
-                                <Label>Jogadores</Label>
-                                <p class="text-sm text-muted-foreground">
-                                    {{ createForm.user_ids.length }}
-                                    selecionados
-                                </p>
-                            </div>
+                            <p
+                                v-if="chipsRemainder"
+                                class="mt-1 text-xs text-amber-600 dark:text-amber-400"
+                            >
+                                {{ chipsRemainder }}
+                                {{
+                                    chipsRemainder === 1
+                                        ? 'ficha vai'
+                                        : 'fichas vão'
+                                }}
+                                sobrar sem dono.
+                            </p>
+                            <InputError
+                                :message="createForm.errors.chips_per_player"
+                            />
                         </div>
 
                         <div class="grid gap-2">
-                            <Label>Quem vai jogar</Label>
+                            <Label>Quem vai jogar?</Label>
                             <div
                                 class="grid max-h-56 gap-2 overflow-y-auto rounded-lg border p-3 sm:grid-cols-2"
                             >
@@ -479,7 +680,9 @@ const closedRoundsCount = computed(
                         <div class="flex justify-end">
                             <Button
                                 type="submit"
-                                :disabled="createForm.processing"
+                                :disabled="
+                                    createForm.processing || !canCreateRound
+                                "
                             >
                                 Criar rodada
                             </Button>
@@ -489,12 +692,27 @@ const closedRoundsCount = computed(
             </Card>
         </div>
 
+        <Card v-if="activeRound" class="gap-4">
+            <CardHeader>
+                <CardTitle>Evolução das fichas</CardTitle>
+                <CardDescription>
+                    A evolução do stack, dia após dia.
+                </CardDescription>
+            </CardHeader>
+            <CardContent>
+                <ChipTrendChart
+                    :players="activeRound.players"
+                    :snapshots="activeRound.snapshots"
+                />
+            </CardContent>
+        </Card>
+
         <div class="grid gap-4 xl:grid-cols-2">
-            <Card>
+            <Card id="historico" class="scroll-mt-24">
                 <CardHeader>
                     <CardTitle>Histórico de rodadas</CardTitle>
                     <CardDescription>
-                        Todas as rodadas registradas.
+                        Da primeira à última mão.
                     </CardDescription>
                 </CardHeader>
 
@@ -530,7 +748,11 @@ const closedRoundsCount = computed(
                                 <tr
                                     v-for="round in rounds"
                                     :key="round.id"
-                                    class="border-t"
+                                    class="cursor-pointer border-t transition-colors hover:bg-muted/50 focus-visible:bg-muted/50 focus-visible:outline-none"
+                                    tabindex="0"
+                                    role="link"
+                                    @click="visitRound(round.id)"
+                                    @keydown.enter="visitRound(round.id)"
                                 >
                                     <td class="px-3 py-2 font-medium">
                                         #{{ round.id }}
@@ -542,35 +764,25 @@ const closedRoundsCount = computed(
                                         {{ round.players_count }}
                                     </td>
                                     <td class="px-3 py-2">
-                                        {{ round.winner ?? '—' }}
+                                        {{
+                                            round.winner ??
+                                            (round.tie ? 'Empate' : '—')
+                                        }}
                                     </td>
                                     <td class="px-3 py-2">
                                         <Badge
-                                            :variant="
-                                                round.status === 'ativa'
-                                                    ? 'default'
-                                                    : 'outline'
+                                            variant="outline"
+                                            :class="
+                                                roundStatusClass(round.status)
                                             "
                                         >
-                                            {{ round.status }}
+                                            {{ roundStatusLabel(round.status) }}
                                         </Badge>
                                     </td>
                                     <td class="px-3 py-2 text-right">
-                                        <Button
-                                            as-child
-                                            variant="ghost"
-                                            size="sm"
-                                        >
-                                            <Link
-                                                :href="
-                                                    RoundController.show.url(
-                                                        round.id,
-                                                    )
-                                                "
-                                            >
-                                                Ver
-                                            </Link>
-                                        </Button>
+                                        <ChevronRight
+                                            class="ml-auto size-4 text-muted-foreground"
+                                        />
                                     </td>
                                 </tr>
                             </tbody>
@@ -578,15 +790,20 @@ const closedRoundsCount = computed(
                     </div>
 
                     <p v-else class="text-sm text-muted-foreground">
-                        Nenhuma rodada criada ainda.
+                        Nenhuma rodada ainda. Que coragem a de vocês.
                     </p>
                 </CardContent>
             </Card>
 
-            <Card>
+            <Card id="ranking" class="scroll-mt-24">
                 <CardHeader>
                     <CardTitle>Ranking de vitórias</CardTitle>
-                    <CardDescription>
+                    <CardDescription v-if="leaderWins > 0 && leaderCount > 1">
+                        Empate no topo: {{ leaderCount }} jogadores com
+                        {{ leaderWins }}
+                        {{ leaderWins === 1 ? 'vitória' : 'vitórias' }}.
+                    </CardDescription>
+                    <CardDescription v-else>
                         Vitórias em rodadas encerradas.
                     </CardDescription>
                 </CardHeader>
@@ -613,12 +830,17 @@ const closedRoundsCount = computed(
                                     <th
                                         class="px-3 py-2 text-right font-medium"
                                     >
-                                        Rodadas
+                                        Rodadas jogadas
                                     </th>
                                     <th
                                         class="px-3 py-2 text-right font-medium"
                                     >
-                                        Fichas atuais
+                                        Taxa
+                                    </th>
+                                    <th
+                                        class="px-3 py-2 text-right font-medium"
+                                    >
+                                        Sequência
                                     </th>
                                 </tr>
                             </thead>
@@ -627,11 +849,24 @@ const closedRoundsCount = computed(
                                     v-for="(entry, index) in ranking"
                                     :key="entry.id"
                                     class="border-t"
+                                    :class="
+                                        isLeader(entry) ? 'bg-primary/5' : ''
+                                    "
                                 >
                                     <td class="px-3 py-2 text-muted-foreground">
                                         {{ index + 1 }}
                                     </td>
-                                    <td class="px-3 py-2">{{ entry.name }}</td>
+                                    <td class="px-3 py-2">
+                                        <span
+                                            class="inline-flex items-center gap-1.5"
+                                        >
+                                            <Trophy
+                                                v-if="isLeader(entry)"
+                                                class="size-3.5 text-primary"
+                                            />
+                                            {{ entry.name }}
+                                        </span>
+                                    </td>
                                     <td class="px-3 py-2 text-right">
                                         {{ entry.wins }}
                                     </td>
@@ -639,7 +874,23 @@ const closedRoundsCount = computed(
                                         {{ entry.rounds_played }}
                                     </td>
                                     <td class="px-3 py-2 text-right">
-                                        {{ entry.current_chips ?? '—' }}
+                                        {{
+                                            entry.win_rate === null
+                                                ? '—'
+                                                : formatPercent(entry.win_rate)
+                                        }}
+                                    </td>
+                                    <td class="px-3 py-2 text-right">
+                                        <span class="whitespace-nowrap">
+                                            {{
+                                                entry.streak === 0
+                                                    ? '–'
+                                                    : entry.streak
+                                            }}
+                                            <span v-if="entry.streak >= 2">
+                                                🔥
+                                            </span>
+                                        </span>
                                     </td>
                                 </tr>
                             </tbody>
@@ -647,10 +898,30 @@ const closedRoundsCount = computed(
                     </div>
 
                     <p v-else class="text-sm text-muted-foreground">
-                        Nenhum jogador cadastrado.
+                        Ninguém na mesa. Cadê o pessoal?
                     </p>
                 </CardContent>
             </Card>
         </div>
+
+        <Dialog v-if="activeRound" v-model:open="confirmCreateOpen">
+            <DialogContent>
+                <DialogHeader>
+                    <DialogTitle>
+                        Encerrar a rodada #{{ activeRound.id }}?
+                    </DialogTitle>
+                    <DialogDescription>
+                        Isso encerra a rodada #{{ activeRound.id }} e abre a
+                        próxima. Continuar?
+                    </DialogDescription>
+                </DialogHeader>
+                <DialogFooter>
+                    <DialogClose as-child>
+                        <Button variant="outline">Cancelar</Button>
+                    </DialogClose>
+                    <Button @click="confirmCreate">Continuar</Button>
+                </DialogFooter>
+            </DialogContent>
+        </Dialog>
     </div>
 </template>

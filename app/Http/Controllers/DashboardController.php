@@ -29,11 +29,9 @@ class DashboardController extends Controller
                 'status' => $round->status,
                 'players_count' => $round->players->count(),
                 'winner' => $this->winnerFor($round)?->name,
+                'tie' => $this->isTie($round),
             ])->values(),
-            'ranking' => $this->ranking(
-                $rounds->where('status', 'encerrada'),
-                $activeRound,
-            ),
+            'ranking' => $this->ranking($rounds),
         ]);
     }
 
@@ -62,12 +60,18 @@ class DashboardController extends Controller
     }
 
     /**
-     * @param  Collection<int, Round>  $closedRounds
+     * @param  Collection<int, Round>  $rounds
      * @return array<int, array<string, mixed>>
      */
-    private function ranking(Collection $closedRounds, ?Round $activeRound): array
+    private function ranking(Collection $rounds): array
     {
+        $closedRounds = $rounds
+            ->where('status', 'encerrada')
+            ->sortByDesc('id')
+            ->values();
+
         $wins = [];
+        $winners = [];
 
         foreach ($closedRounds as $round) {
             $winner = $this->winnerFor($round);
@@ -76,32 +80,70 @@ class DashboardController extends Controller
                 continue;
             }
 
+            $winners[$round->id] = $winner->id;
             $wins[$winner->id] = ($wins[$winner->id] ?? 0) + 1;
         }
 
-        $activeChips = $activeRound
-            ? $activeRound->players->mapWithKeys(
-                fn (User $user) => [$user->id => (int) $user->pivot->chips],
-            )
-            : collect();
-
-        return User::query()
-            ->withCount('rounds')
-            ->orderBy('name')
-            ->get()
-            ->map(fn (User $user) => [
-                'id' => $user->id,
-                'name' => $user->name,
-                'wins' => $wins[$user->id] ?? 0,
-                'rounds_played' => $user->rounds_count,
-                'current_chips' => $activeChips->get($user->id),
+        $users = User::query()
+            ->withCount([
+                'rounds' => fn ($query) => $query->where('rounds.status', 'encerrada'),
             ])
-            ->sortByDesc('wins')
+            ->orderBy('name')
+            ->get();
+
+        $streaks = $users->mapWithKeys(function (User $user) use ($closedRounds, $winners) {
+            $streak = 0;
+
+            foreach ($closedRounds as $round) {
+                if (($winners[$round->id] ?? null) !== $user->id) {
+                    break;
+                }
+
+                $streak++;
+            }
+
+            return [$user->id => $streak];
+        });
+
+        return $users
+            ->map(function (User $user) use ($wins, $streaks) {
+                $roundsPlayed = $user->rounds_count;
+                $winsCount = $wins[$user->id] ?? 0;
+
+                return [
+                    'id' => $user->id,
+                    'name' => $user->name,
+                    'wins' => $winsCount,
+                    'rounds_played' => $roundsPlayed,
+                    'win_rate' => $roundsPlayed > 0
+                        ? ($winsCount / $roundsPlayed) * 100
+                        : null,
+                    'streak' => $streaks->get($user->id, 0),
+                ];
+            })
+            ->sort(fn (array $a, array $b) => $b['wins'] <=> $a['wins']
+                ?: ($b['win_rate'] ?? -1) <=> ($a['win_rate'] ?? -1)
+                ?: $a['name'] <=> $b['name'])
             ->values()
             ->all();
     }
 
     private function winnerFor(Round $round): ?User
+    {
+        $topPlayers = $this->topPlayers($round);
+
+        return $topPlayers?->count() === 1 ? $topPlayers->first() : null;
+    }
+
+    private function isTie(Round $round): bool
+    {
+        return ($this->topPlayers($round)?->count() ?? 0) > 1;
+    }
+
+    /**
+     * @return Collection<int, User>|null
+     */
+    private function topPlayers(Round $round): ?Collection
     {
         if ($round->status !== 'encerrada' || $round->players->isEmpty()) {
             return null;
@@ -113,14 +155,13 @@ class DashboardController extends Controller
 
         $candidates = $survivors->isNotEmpty() ? $survivors : $round->players;
         $topChips = $candidates->max(fn (User $user) => (int) $user->pivot->chips);
-        $topPlayers = $candidates->filter(
-            fn (User $user) => (int) $user->pivot->chips === $topChips,
-        );
 
-        if ($topChips === null || $topChips <= 0 || $topPlayers->count() !== 1) {
+        if ($topChips === null || $topChips <= 0) {
             return null;
         }
 
-        return $topPlayers->first();
+        return $candidates
+            ->filter(fn (User $user) => (int) $user->pivot->chips === $topChips)
+            ->values();
     }
 }

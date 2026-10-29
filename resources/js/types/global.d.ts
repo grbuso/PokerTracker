@@ -20,6 +20,11 @@ declare module '@inertiajs/core' {
             name: string;
             auth: Auth;
             sidebarOpen: boolean;
+            sidebarRounds: Array<{
+                id: number;
+                starts_on: string;
+                status: string;
+            }>;
             [key: string]: unknown;
         };
     }

@@ -2,6 +2,8 @@
 import { Head, Link, useForm } from '@inertiajs/vue3';
 import { computed, watch } from 'vue';
 import RoundController from '@/actions/App/Http/Controllers/RoundController';
+import ChipTrendChart from '@/components/ChipTrendChart.vue';
+import InputError from '@/components/InputError.vue';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -11,7 +13,6 @@ import {
     CardHeader,
     CardTitle,
 } from '@/components/ui/card';
-import InputError from '@/components/InputError.vue';
 import { Label } from '@/components/ui/label';
 import { dashboard } from '@/routes';
 
@@ -37,6 +38,13 @@ const props = defineProps<{
     };
     snapshots: Snapshot[];
 }>();
+
+defineOptions({
+    layout: {
+        transparentHeader: true,
+        backdrop: true,
+    },
+});
 
 const activePlayers = computed(() =>
     props.round.players.filter((player) => !player.pivot.eliminated_at),
@@ -75,6 +83,29 @@ const sum = computed(() =>
     ),
 );
 
+const sumMatches = computed(() => sum.value === props.round.total_chips);
+
+const isActive = computed(() => props.round.status === 'ativa');
+
+const canSave = computed(
+    () => isActive.value && activePlayers.value.length > 0 && sumMatches.value,
+);
+
+const statusLabel = computed(() =>
+    props.round.status === 'ativa' ? 'Em andamento' : 'Encerrada',
+);
+
+const statusClass = computed(() =>
+    props.round.status === 'ativa'
+        ? 'border-emerald-500/20 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400'
+        : 'border-border bg-muted text-muted-foreground',
+);
+
+const playerStatusClass = (eliminated: boolean): string =>
+    eliminated
+        ? 'border-destructive/20 bg-destructive/10 text-destructive'
+        : 'border-emerald-500/20 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400';
+
 const days = computed(() => [
     ...new Set(props.snapshots.map((snapshot) => snapshot.recorded_on)),
 ]);
@@ -98,6 +129,10 @@ const formatDay = (day: string): string => {
 };
 
 const submit = () => {
+    if (!isActive.value) {
+        return;
+    }
+
     form.post(RoundController.storeSnapshot.url(props.round.id), {
         preserveScroll: true,
     });
@@ -107,25 +142,25 @@ const submit = () => {
 <template>
     <Head :title="`Rodada ${round.id}`" />
 
-    <div class="flex h-full flex-1 flex-col gap-4 overflow-x-auto p-4">
+    <div
+        class="relative isolate flex h-full flex-1 flex-col gap-4 overflow-x-auto p-4"
+    >
         <div class="flex flex-wrap items-center justify-between gap-3">
             <div>
-                <h1 class="text-xl font-semibold">
-                    Rodada #{{ round.id }}
-                    <Badge
-                        :variant="
-                            round.status === 'ativa' ? 'default' : 'outline'
-                        "
-                    >
-                        {{ round.status }}
+                <div class="flex flex-wrap items-center gap-2">
+                    <h1 class="text-xl font-semibold">
+                        Rodada #{{ round.id }}
+                    </h1>
+                    <Badge variant="outline" :class="statusClass">
+                        {{ statusLabel }}
                     </Badge>
-                </h1>
+                </div>
                 <p class="text-sm text-muted-foreground">
                     Total de fichas: {{ round.total_chips }}
                 </p>
             </div>
 
-            <Button as-child variant="outline">
+            <Button as-child>
                 <Link :href="dashboard()">Voltar ao dashboard</Link>
             </Button>
         </div>
@@ -133,19 +168,21 @@ const submit = () => {
         <div class="grid gap-4 xl:grid-cols-2">
             <Card>
                 <CardHeader>
-                    <CardTitle>Registrar o dia</CardTitle>
-                    <CardDescription v-if="activePlayers.length">
+                    <CardTitle>
+                        {{ isActive ? 'Registrar o dia' : 'Rodada encerrada' }}
+                    </CardTitle>
+                    <CardDescription v-if="isActive && activePlayers.length">
                         Atualize as fichas dos jogadores que continuam na
                         rodada.
                     </CardDescription>
-                    <CardDescription v-else>
+                    <CardDescription v-else-if="isActive">
                         Todos os jogadores desta rodada foram eliminados.
                     </CardDescription>
                 </CardHeader>
 
                 <CardContent>
                     <form
-                        v-if="activePlayers.length"
+                        v-if="isActive && activePlayers.length"
                         class="space-y-4"
                         @submit.prevent="submit"
                     >
@@ -165,9 +202,9 @@ const submit = () => {
                             <p
                                 class="pb-2 text-sm"
                                 :class="
-                                    sum === round.total_chips
-                                        ? 'text-muted-foreground'
-                                        : 'text-amber-600 dark:text-amber-400'
+                                    sumMatches
+                                        ? 'text-emerald-600 dark:text-emerald-400'
+                                        : 'text-destructive'
                                 "
                             >
                                 Soma: {{ sum }} / {{ round.total_chips }}
@@ -193,9 +230,22 @@ const submit = () => {
                                         v-for="player in round.players"
                                         :key="player.id"
                                         class="border-t"
+                                        :class="
+                                            player.pivot.eliminated_at
+                                                ? 'text-muted-foreground'
+                                                : ''
+                                        "
                                     >
                                         <td class="px-3 py-2">
-                                            {{ player.name }}
+                                            <span
+                                                :class="
+                                                    player.pivot.eliminated_at
+                                                        ? 'line-through'
+                                                        : ''
+                                                "
+                                            >
+                                                {{ player.name }}
+                                            </span>
                                         </td>
                                         <td class="px-3 py-2">
                                             <input
@@ -206,10 +256,15 @@ const submit = () => {
                                                     form.chips[player.id]
                                                 "
                                                 type="number"
+                                                inputmode="numeric"
                                                 min="0"
                                                 class="h-8 w-24 rounded-md border border-input bg-transparent px-2 text-right text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
                                             />
-                                            <Badge v-else variant="outline">
+                                            <Badge
+                                                v-else
+                                                variant="outline"
+                                                :class="playerStatusClass(true)"
+                                            >
                                                 Eliminado
                                             </Badge>
                                         </td>
@@ -220,13 +275,38 @@ const submit = () => {
 
                         <InputError :message="form.errors.chips" />
 
-                        <div class="flex justify-end">
-                            <Button type="submit" :disabled="form.processing">
+                        <div
+                            class="flex flex-wrap items-center justify-between gap-3"
+                        >
+                            <p
+                                class="text-xs"
+                                :class="
+                                    sumMatches
+                                        ? 'text-muted-foreground'
+                                        : 'text-destructive'
+                                "
+                            >
+                                {{
+                                    sumMatches
+                                        ? 'Zero é eliminação automática. Sem choro.'
+                                        : 'A soma precisa fechar antes de salvar.'
+                                }}
+                            </p>
+                            <Button
+                                type="submit"
+                                :disabled="form.processing || !canSave"
+                            >
                                 Salvar o dia
                             </Button>
                         </div>
                     </form>
 
+                    <p
+                        v-else-if="!isActive"
+                        class="text-sm text-muted-foreground"
+                    >
+                        Rodada encerrada. O histórico fica só para consulta.
+                    </p>
                     <p v-else class="text-sm text-muted-foreground">
                         Crie uma nova rodada no dashboard para continuar.
                     </p>
@@ -268,9 +348,22 @@ const submit = () => {
                                     v-for="player in round.players"
                                     :key="player.id"
                                     class="border-t"
+                                    :class="
+                                        player.pivot.eliminated_at
+                                            ? 'text-muted-foreground'
+                                            : ''
+                                    "
                                 >
                                     <td class="px-3 py-2">
-                                        {{ player.name }}
+                                        <span
+                                            :class="
+                                                player.pivot.eliminated_at
+                                                    ? 'line-through'
+                                                    : ''
+                                            "
+                                        >
+                                            {{ player.name }}
+                                        </span>
                                     </td>
                                     <td
                                         v-for="day in days"
@@ -285,10 +378,27 @@ const submit = () => {
                     </div>
 
                     <p v-else class="text-sm text-muted-foreground">
-                        Nenhum dia registrado ainda.
+                        Nenhum dia registrado. O histórico não se escreve
+                        sozinho.
                     </p>
                 </CardContent>
             </Card>
         </div>
+
+        <Card class="gap-4">
+            <CardHeader>
+                <CardTitle>Evolução das fichas</CardTitle>
+                <CardDescription>
+                    Como cada stack se mexeu ao longo dos dias. As linhas não
+                    mentem.
+                </CardDescription>
+            </CardHeader>
+            <CardContent>
+                <ChipTrendChart
+                    :players="round.players"
+                    :snapshots="snapshots"
+                />
+            </CardContent>
+        </Card>
     </div>
 </template>

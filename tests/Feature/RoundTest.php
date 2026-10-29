@@ -75,6 +75,30 @@ test('a snapshot ignores players eliminated from the round', function () {
     expect(ChipSnapshot::query()->count())->toBe(0);
 });
 
+test('a closed round cannot receive new snapshots', function () {
+    $user = User::factory()->create();
+    $player = User::factory()->create();
+    $round = Round::create([
+        'starts_on' => '2026-10-28',
+        'total_chips' => 1000,
+        'status' => 'encerrada',
+    ]);
+    $round->players()->attach($player->id, ['chips' => 500]);
+
+    $this->actingAs($user);
+
+    $this->from(route('rounds.show', $round))
+        ->post(route('rounds.snapshots.store', $round), [
+            'recorded_on' => '2026-10-29',
+            'chips' => [$player->id => 0],
+        ])
+        ->assertRedirect(route('rounds.show', $round));
+
+    expect(ChipSnapshot::query()->count())->toBe(0)
+        ->and($round->players()->first()->pivot->chips)->toBe(500)
+        ->and($round->players()->first()->pivot->eliminated_at)->toBeNull();
+});
+
 test('creating a round closes the previous active round', function () {
     $user = User::factory()->create();
     $firstPlayer = User::factory()->create();

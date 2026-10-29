@@ -47,6 +47,15 @@ class RoundController extends Controller
 
     public function storeSnapshot(Request $request, Round $round): RedirectResponse
     {
+        if ($round->status !== 'ativa') {
+            Inertia::flash('toast', [
+                'type' => 'error',
+                'message' => __('Rodada encerrada não pode ser alterada.'),
+            ]);
+
+            return back();
+        }
+
         $data = $request->validate([
             'recorded_on' => ['required', 'date'],
             'chips' => ['required', 'array'],
