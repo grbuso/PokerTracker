@@ -17,7 +17,7 @@ test('authenticated users can visit the dashboard', function () {
     $response->assertOk();
 });
 
-test('dashboard shows the active round players and snapshot history', function () {
+test('dashboard shows the active round summary', function () {
     $user = User::factory()->create(['name' => 'Zed']);
     $player = User::factory()->create(['name' => 'Ana']);
     $round = Round::create([
@@ -40,9 +40,12 @@ test('dashboard shows the active round players and snapshot history', function (
             ->component('Dashboard')
             ->where('canManage', false)
             ->where('activeRound.id', $round->id)
-            ->where('activeRound.players.0.name', 'Ana')
-            ->where('activeRound.players.0.chips', 400)
-            ->where('activeRound.snapshots.0.user_id', $player->id)
+            ->where('activeRound.players_count', 1)
+            ->where('activeRound.active_players_count', 1)
+            ->where('activeRound.leader.name', 'Ana')
+            ->where('activeRound.leader.chips', 400)
+            ->where('activeRound.last_snapshot_on', '28/10/2026')
+            ->where('stats.last_snapshot_on', '28/10/2026')
             ->where('ranking.0.name', 'Ana')
             ->where('ranking.0.win_rate', null)
             ->where('ranking.0.streak', 0)

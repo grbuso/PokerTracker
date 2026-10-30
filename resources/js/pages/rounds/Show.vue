@@ -1,6 +1,17 @@
 <script setup lang="ts">
 import { Head, Link, router, useForm } from '@inertiajs/vue3';
-import { CalendarDays, Flag, Trash2, Trophy, UserX, Users } from '@lucide/vue';
+import {
+    ArrowLeft,
+    CalendarDays,
+    ChartLine,
+    Clock,
+    Coins,
+    Flag,
+    Table2,
+    Trash2,
+    Trophy,
+    UserX,
+} from '@lucide/vue';
 import { computed, ref, watch } from 'vue';
 import RoundController from '@/actions/App/Http/Controllers/RoundController';
 import ChipTrendChart from '@/components/ChipTrendChart.vue';
@@ -9,6 +20,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
     Card,
+    CardAction,
     CardContent,
     CardDescription,
     CardHeader,
@@ -23,7 +35,6 @@ import {
     DialogHeader,
     DialogTitle,
 } from '@/components/ui/dialog';
-import { Label } from '@/components/ui/label';
 import { dashboard } from '@/routes';
 
 type Player = {
@@ -227,8 +238,10 @@ const formatDay = (day: string): string => {
 const chipFormatter = new Intl.NumberFormat('pt-BR');
 const formatChips = (chips: number): string => chipFormatter.format(chips);
 
-const eliminatedCount = computed(
-    () => props.round.players.length - activePlayers.value.length,
+const initialChipsPerPlayer = computed(() =>
+    props.round.players.length > 0
+        ? Math.floor(props.round.total_chips / props.round.players.length)
+        : null,
 );
 
 const leader = computed(() => {
@@ -257,6 +270,19 @@ const lastSnapshotOn = computed(() => {
     return last ? formatDay(last) : null;
 });
 
+const roundCreatedOn = computed(() => {
+    const value = props.round.starts_on;
+
+    if (!value) {
+        return null;
+    }
+
+    const [year, month, day] = value.slice(0, 10).split('-');
+
+    return year && month && day ? `${day}/${month}/${year}` : value;
+});
+
+const historyView = ref<'table' | 'chart'>('table');
 const closeOpen = ref(false);
 const deleteOpen = ref(false);
 
@@ -287,26 +313,33 @@ const submit = () => {
     <Head :title="`Rodada ${round.id}`" />
 
     <div
-        class="relative isolate flex h-full flex-1 flex-col gap-4 overflow-x-auto p-4"
+        class="relative isolate flex h-full flex-1 flex-col gap-5 overflow-x-auto p-4 md:p-6"
     >
-        <div class="flex flex-wrap items-center justify-between gap-3">
-            <div>
+        <header class="flex flex-wrap items-end justify-between gap-4">
+            <div class="space-y-1">
+                <p
+                    class="text-xs font-medium tracking-[0.18em] text-primary uppercase"
+                >
+                    Rodada
+                </p>
                 <div class="flex flex-wrap items-center gap-2">
-                    <h1 class="text-xl font-semibold">
+                    <h1
+                        class="text-2xl font-semibold tracking-tight md:text-3xl"
+                    >
                         Rodada #{{ round.id }}
                     </h1>
                     <Badge variant="outline" :class="statusClass">
                         {{ statusLabel }}
                     </Badge>
                 </div>
-                <p class="text-sm text-muted-foreground">
-                    Total de fichas: {{ formatChips(round.total_chips) }}
-                </p>
             </div>
 
             <div class="flex flex-wrap items-center gap-2">
                 <Button as-child variant="outline">
-                    <Link :href="dashboard()">Voltar ao dashboard</Link>
+                    <Link :href="dashboard()">
+                        <ArrowLeft class="size-4" />
+                        Dashboard
+                    </Link>
                 </Button>
 
                 <template v-if="canManage">
@@ -317,7 +350,7 @@ const submit = () => {
                         @click="closeOpen = true"
                     >
                         <Flag class="size-4" />
-                        Encerrar rodada
+                        Encerrar
                     </Button>
                     <Button
                         type="button"
@@ -325,115 +358,131 @@ const submit = () => {
                         @click="deleteOpen = true"
                     >
                         <Trash2 class="size-4" />
-                        Excluir rodada
+                        Excluir
                     </Button>
                 </template>
             </div>
-        </div>
+        </header>
 
-        <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            <Card class="py-0">
-                <CardContent class="flex items-center gap-4 p-4">
-                    <div
-                        class="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary"
-                    >
-                        <Trophy class="size-5" />
-                    </div>
-                    <div class="min-w-0 space-y-0.5">
-                        <p
-                            class="text-xs font-medium tracking-wide text-muted-foreground uppercase"
+        <Card
+            class="relative overflow-hidden border-primary/15 bg-linear-to-br from-primary/10 via-card to-card py-0"
+        >
+            <div
+                class="pointer-events-none absolute -top-24 -right-24 size-64 rounded-full bg-primary/10 blur-3xl"
+                aria-hidden="true"
+            />
+            <CardContent
+                class="relative grid gap-6 p-5 md:grid-cols-[1.35fr_1fr] md:p-6"
+            >
+                <div class="flex flex-col justify-between gap-5">
+                    <div class="space-y-1">
+                        <div
+                            class="flex items-center gap-1.5 text-muted-foreground"
                         >
-                            Líder
-                        </p>
-                        <p
-                            class="truncate text-2xl leading-tight font-semibold"
+                            <Trophy class="size-3.5" />
+                            <p
+                                class="text-xs font-medium tracking-[0.16em] uppercase"
+                            >
+                                Líder da rodada
+                            </p>
+                        </div>
+                        <h2
+                            class="text-3xl font-semibold tracking-tight md:text-4xl"
                         >
-                            {{ leader?.name ?? '—' }}
-                        </p>
-                        <p class="truncate text-xs text-muted-foreground">
                             {{
                                 leader
-                                    ? `${formatChips(leader.chips)} fichas`
-                                    : 'Sem jogadores ativos'
+                                    ? leader.tied
+                                        ? 'Empate'
+                                        : leader.name
+                                    : 'Mesa vazia'
                             }}
+                        </h2>
+                        <p class="text-sm text-muted-foreground">
+                            <template v-if="leader">
+                                {{ formatChips(leader.chips) }} fichas
+                                <template v-if="leader.tied">
+                                    · {{ leader.count }} jogadores empatados
+                                </template>
+                            </template>
+                            <template
+                                v-else-if="
+                                    !activePlayers.length &&
+                                    round.players.length
+                                "
+                            >
+                                Todos os jogadores foram eliminados.
+                            </template>
+                            <template v-else>
+                                Nenhum jogador ativo nesta rodada.
+                            </template>
                         </p>
                     </div>
-                </CardContent>
-            </Card>
 
-            <Card class="py-0">
-                <CardContent class="flex items-center gap-4 p-4">
                     <div
-                        class="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary"
+                        class="flex flex-wrap items-center gap-2 text-xs text-muted-foreground"
                     >
-                        <Users class="size-5" />
-                    </div>
-                    <div class="min-w-0 space-y-0.5">
-                        <p
-                            class="text-xs font-medium tracking-wide text-muted-foreground uppercase"
-                        >
-                            Ativos
-                        </p>
-                        <p class="text-2xl leading-tight font-semibold">
-                            {{ activePlayers.length }}
-                        </p>
-                        <p class="truncate text-xs text-muted-foreground">
-                            Jogadores na mesa
-                        </p>
-                    </div>
-                </CardContent>
-            </Card>
-
-            <Card class="py-0">
-                <CardContent class="flex items-center gap-4 p-4">
-                    <div
-                        class="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary"
-                    >
-                        <UserX class="size-5" />
-                    </div>
-                    <div class="min-w-0 space-y-0.5">
-                        <p
-                            class="text-xs font-medium tracking-wide text-muted-foreground uppercase"
-                        >
-                            Eliminados
-                        </p>
-                        <p class="text-2xl leading-tight font-semibold">
-                            {{ eliminatedCount }}
-                        </p>
-                        <p class="truncate text-xs text-muted-foreground">
-                            Fora da rodada
-                        </p>
-                    </div>
-                </CardContent>
-            </Card>
-
-            <Card class="py-0">
-                <CardContent class="flex items-center gap-4 p-4">
-                    <div
-                        class="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary"
-                    >
-                        <CalendarDays class="size-5" />
-                    </div>
-                    <div class="min-w-0 space-y-0.5">
-                        <p
-                            class="text-xs font-medium tracking-wide text-muted-foreground uppercase"
-                        >
-                            Dias registrados
-                        </p>
-                        <p class="text-2xl leading-tight font-semibold">
-                            {{ days.length }}
-                        </p>
-                        <p class="truncate text-xs text-muted-foreground">
+                        <span class="inline-flex items-center gap-1.5">
+                            <Clock class="size-3.5" />
                             {{
                                 lastSnapshotOn
-                                    ? `Último registro: ${lastSnapshotOn}`
-                                    : 'Nenhum lançamento'
+                                    ? `Último lançamento em ${lastSnapshotOn}`
+                                    : 'Nenhum lançamento registrado ainda'
+                            }}
+                        </span>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-2 gap-3 self-center">
+                    <div
+                        class="rounded-xl border bg-background/70 p-3 backdrop-blur-sm"
+                    >
+                        <div
+                            class="flex items-center gap-1.5 text-muted-foreground"
+                        >
+                            <Coins class="size-3.5" />
+                            <p
+                                class="text-[11px] font-medium tracking-wide uppercase"
+                            >
+                                Fichas em jogo
+                            </p>
+                        </div>
+                        <p class="mt-1 text-lg font-semibold tabular-nums">
+                            {{ formatChips(round.total_chips) }}
+                        </p>
+                        <p
+                            class="truncate text-[11px] text-muted-foreground tabular-nums"
+                        >
+                            {{
+                                initialChipsPerPlayer === null
+                                    ? '—'
+                                    : `${formatChips(initialChipsPerPlayer)} iniciais por jogador`
                             }}
                         </p>
                     </div>
-                </CardContent>
-            </Card>
-        </div>
+
+                    <div
+                        class="rounded-xl border bg-background/70 p-3 backdrop-blur-sm"
+                    >
+                        <div
+                            class="flex items-center gap-1.5 text-muted-foreground"
+                        >
+                            <CalendarDays class="size-3.5" />
+                            <p
+                                class="text-[11px] font-medium tracking-wide uppercase"
+                            >
+                                Início da rodada
+                            </p>
+                        </div>
+                        <p class="mt-1 text-lg font-semibold tabular-nums">
+                            {{ roundCreatedOn ?? '—' }}
+                        </p>
+                        <p class="truncate text-[11px] text-muted-foreground">
+                            Data de criação
+                        </p>
+                    </div>
+                </div>
+            </CardContent>
+        </Card>
 
         <div class="grid gap-4 xl:grid-cols-2">
             <Card>
@@ -450,14 +499,53 @@ const submit = () => {
                     <CardDescription
                         v-if="isActive && activePlayers.length && canManage"
                     >
-                        Atualize as fichas dos jogadores que continuam na
-                        rodada.
+                        Atualize as fichas de quem continua na mesa.
                     </CardDescription>
                     <CardDescription
-                        v-else-if="isActive && activePlayers.length == 0"
+                        v-else-if="isActive && activePlayers.length === 0"
                     >
                         Todos os jogadores desta rodada foram eliminados.
                     </CardDescription>
+                    <CardAction
+                        v-if="canManage && isActive && activePlayers.length"
+                    >
+                        <div class="grid justify-items-end gap-1">
+                            <div
+                                class="relative flex h-9 w-fit items-center overflow-hidden rounded-md border border-input shadow-xs focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/50"
+                            >
+                                <input
+                                    id="recorded_on"
+                                    v-model="recordedOnDisplay"
+                                    type="text"
+                                    inputmode="numeric"
+                                    autocomplete="off"
+                                    maxlength="10"
+                                    placeholder="DD/MM/AAAA"
+                                    aria-label="Data do registro"
+                                    class="h-full w-28 bg-transparent pr-2 pl-3 text-sm outline-none placeholder:text-muted-foreground"
+                                    @input="onDateInput"
+                                />
+                                <input
+                                    ref="dateInput"
+                                    type="date"
+                                    tabindex="-1"
+                                    aria-hidden="true"
+                                    :value="form.recorded_on"
+                                    class="pointer-events-none absolute inset-0 h-full w-full [color-scheme:light] opacity-0 dark:[color-scheme:dark]"
+                                    @change="onDatePicked"
+                                />
+                                <button
+                                    type="button"
+                                    class="flex h-full w-9 items-center justify-center border-l border-input text-muted-foreground transition-colors outline-none hover:bg-muted hover:text-foreground focus-visible:bg-muted focus-visible:text-foreground"
+                                    aria-label="Abrir calendário"
+                                    @click="openDatePicker"
+                                >
+                                    <CalendarDays class="size-4" />
+                                </button>
+                            </div>
+                            <InputError :message="form.errors.recorded_on" />
+                        </div>
+                    </CardAction>
                 </CardHeader>
 
                 <CardContent>
@@ -466,68 +554,17 @@ const submit = () => {
                         class="space-y-4"
                         @submit.prevent="submit"
                     >
-                        <div class="flex flex-wrap items-end gap-4">
-                            <div class="grid gap-2">
-                                <Label for="recorded_on">Data</Label>
-                                <div
-                                    class="relative flex h-9 w-fit items-center overflow-hidden rounded-md border border-input shadow-xs focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/50"
-                                >
-                                    <input
-                                        id="recorded_on"
-                                        v-model="recordedOnDisplay"
-                                        type="text"
-                                        inputmode="numeric"
-                                        autocomplete="off"
-                                        maxlength="10"
-                                        placeholder="DD/MM/AAAA"
-                                        class="h-full w-28 bg-transparent pr-2 pl-3 text-sm outline-none placeholder:text-muted-foreground"
-                                        @input="onDateInput"
-                                    />
-                                    <input
-                                        ref="dateInput"
-                                        type="date"
-                                        tabindex="-1"
-                                        aria-hidden="true"
-                                        :value="form.recorded_on"
-                                        class="pointer-events-none absolute inset-0 h-full w-full [color-scheme:light] opacity-0 dark:[color-scheme:dark]"
-                                        @change="onDatePicked"
-                                    />
-                                    <button
-                                        type="button"
-                                        class="flex h-full w-9 items-center justify-center border-l border-input text-muted-foreground transition-colors outline-none hover:bg-muted hover:text-foreground focus-visible:bg-muted focus-visible:text-foreground"
-                                        aria-label="Abrir calendário"
-                                        @click="openDatePicker"
-                                    >
-                                        <CalendarDays class="size-4" />
-                                    </button>
-                                </div>
-                                <InputError
-                                    :message="form.errors.recorded_on"
-                                />
-                            </div>
-                            <p
-                                class="pb-2 text-sm"
-                                :class="
-                                    sumMatches
-                                        ? 'text-emerald-600 dark:text-emerald-400'
-                                        : 'text-destructive'
-                                "
-                            >
-                                Soma: {{ sum }} / {{ round.total_chips }}
-                            </p>
-                        </div>
-
                         <div class="overflow-x-auto rounded-lg border">
                             <table class="w-full text-sm">
                                 <thead
-                                    class="bg-muted/50 text-left text-muted-foreground"
+                                    class="bg-muted/50 text-left text-[11px] tracking-wide text-muted-foreground uppercase"
                                 >
                                     <tr>
-                                        <th class="px-3 py-2 font-medium">
+                                        <th class="px-3 py-2.5 font-medium">
                                             Jogador
                                         </th>
                                         <th
-                                            class="px-3 py-2 text-center font-medium"
+                                            class="px-3 py-2.5 text-center font-medium"
                                         >
                                             Fichas
                                         </th>
@@ -544,7 +581,7 @@ const submit = () => {
                                                 : ''
                                         "
                                     >
-                                        <td class="px-3 py-2">
+                                        <td class="px-3 py-2.5">
                                             <span
                                                 :class="
                                                     player.pivot.eliminated_at
@@ -555,7 +592,7 @@ const submit = () => {
                                                 {{ player.name }}
                                             </span>
                                         </td>
-                                        <td class="px-3 py-2 text-center">
+                                        <td class="px-3 py-2.5 text-center">
                                             <div
                                                 v-if="
                                                     !player.pivot.eliminated_at
@@ -617,11 +654,11 @@ const submit = () => {
                                         : 'text-destructive'
                                 "
                             >
-                                {{
-                                    sumMatches
-                                        ? 'Zero é eliminação automática. Sem choro.'
-                                        : 'A soma precisa fechar antes de salvar.'
-                                }}
+                                Soma {{ formatChips(sum) }} /
+                                {{ formatChips(round.total_chips) }}
+                                <span v-if="!sumMatches">
+                                    · precisa fechar antes de salvar
+                                </span>
                             </p>
                             <Button
                                 type="submit"
@@ -652,91 +689,121 @@ const submit = () => {
 
             <Card>
                 <CardHeader>
-                    <CardTitle>Histórico de snapshots</CardTitle>
+                    <CardTitle>Histórico</CardTitle>
                     <CardDescription>
-                        Fichas de cada jogador por dia.
+                        {{ days.length }}
+                        {{
+                            days.length === 1
+                                ? 'dia registrado'
+                                : 'dias registrados'
+                        }}
                     </CardDescription>
+                    <CardAction>
+                        <div
+                            class="flex items-center gap-1 rounded-lg border p-0.5"
+                        >
+                            <Button
+                                type="button"
+                                :variant="
+                                    historyView === 'table'
+                                        ? 'secondary'
+                                        : 'ghost'
+                                "
+                                size="sm"
+                                :aria-pressed="historyView === 'table'"
+                                @click="historyView = 'table'"
+                            >
+                                <Table2 class="size-3.5" />
+                                <span class="hidden sm:inline">Tabela</span>
+                            </Button>
+                            <Button
+                                type="button"
+                                :variant="
+                                    historyView === 'chart'
+                                        ? 'secondary'
+                                        : 'ghost'
+                                "
+                                size="sm"
+                                :aria-pressed="historyView === 'chart'"
+                                @click="historyView = 'chart'"
+                            >
+                                <ChartLine class="size-3.5" />
+                                <span class="hidden sm:inline">Evolução</span>
+                            </Button>
+                        </div>
+                    </CardAction>
                 </CardHeader>
 
-                <CardContent>
-                    <div
-                        v-if="days.length"
-                        class="overflow-x-auto rounded-lg border"
-                    >
-                        <table class="w-full text-sm">
-                            <thead
-                                class="bg-muted/50 text-left text-muted-foreground"
-                            >
-                                <tr>
-                                    <th class="px-3 py-2 font-medium">
-                                        Jogador
-                                    </th>
-                                    <th
-                                        v-for="day in days"
-                                        :key="day"
-                                        class="px-3 py-2 text-center font-medium"
-                                    >
-                                        {{ formatDay(day) }}
-                                    </th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <tr
-                                    v-for="player in round.players"
-                                    :key="player.id"
-                                    class="border-t"
-                                    :class="
-                                        player.pivot.eliminated_at
-                                            ? 'text-muted-foreground'
-                                            : ''
-                                    "
+                <CardContent class="flex-1">
+                    <template v-if="days.length">
+                        <div
+                            v-if="historyView === 'table'"
+                            class="overflow-x-auto rounded-lg border"
+                        >
+                            <table class="w-full table-fixed text-sm">
+                                <thead
+                                    class="bg-muted/50 text-left text-[11px] tracking-wide text-muted-foreground uppercase"
                                 >
-                                    <td class="px-3 py-2">
-                                        <span
-                                            :class="
-                                                player.pivot.eliminated_at
-                                                    ? 'line-through'
-                                                    : ''
-                                            "
+                                    <tr>
+                                        <th class="px-3 py-2.5 font-medium">
+                                            Jogador
+                                        </th>
+                                        <th
+                                            v-for="day in days"
+                                            :key="day"
+                                            class="px-3 py-2.5 text-center font-medium whitespace-nowrap"
                                         >
-                                            {{ player.name }}
-                                        </span>
-                                    </td>
-                                    <td
-                                        v-for="day in days"
-                                        :key="day"
-                                        class="px-3 py-2 text-center"
+                                            {{ formatDay(day) }}
+                                        </th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr
+                                        v-for="player in round.players"
+                                        :key="player.id"
+                                        class="border-t"
+                                        :class="
+                                            player.pivot.eliminated_at
+                                                ? 'text-muted-foreground'
+                                                : ''
+                                        "
                                     >
-                                        {{ cell(player.id, day) }}
-                                    </td>
-                                </tr>
-                            </tbody>
-                        </table>
-                    </div>
+                                        <td class="px-3 py-2.5">
+                                            <span
+                                                :class="
+                                                    player.pivot.eliminated_at
+                                                        ? 'line-through'
+                                                        : ''
+                                                "
+                                            >
+                                                {{ player.name }}
+                                            </span>
+                                        </td>
+                                        <td
+                                            v-for="day in days"
+                                            :key="day"
+                                            class="px-3 py-2.5 text-center tabular-nums"
+                                        >
+                                            {{ cell(player.id, day) }}
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <ChipTrendChart
+                            v-else
+                            :players="round.players"
+                            :snapshots="snapshots"
+                        />
+                    </template>
 
                     <p v-else class="text-sm text-muted-foreground">
-                        Nenhum dia registrado. O histórico não se escreve
-                        sozinho.
+                        Nenhum dia registrado.
                     </p>
                 </CardContent>
             </Card>
         </div>
-
-        <Card class="gap-4">
-            <CardHeader>
-                <CardTitle>Evolução das fichas</CardTitle>
-                <CardDescription>
-                    Como cada stack se mexeu ao longo dos dias. As linhas não
-                    mentem.
-                </CardDescription>
-            </CardHeader>
-            <CardContent>
-                <ChipTrendChart
-                    :players="round.players"
-                    :snapshots="snapshots"
-                />
-            </CardContent>
-        </Card>
 
         <Dialog v-model:open="closeOpen">
             <DialogContent>

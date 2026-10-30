@@ -1,12 +1,15 @@
 <script setup lang="ts">
 import { Head, Link, router, useForm } from '@inertiajs/vue3';
 import {
+    ArrowRight,
     CalendarDays,
     ChevronDown,
     ChevronRight,
     ChevronUp,
+    Clock,
     Coins,
-    Flag,
+    Flame,
+    Plus,
     Trophy,
     Users,
 } from '@lucide/vue';
@@ -41,6 +44,12 @@ type ActiveRound = {
     total_chips: number;
     players_count: number;
     active_players_count: number;
+    leader: {
+        name: string;
+        chips: number;
+        tied: boolean;
+        count: number;
+    } | null;
     last_snapshot_on: string | null;
 };
 
@@ -48,7 +57,6 @@ type Stats = {
     total_players: number;
     total_rounds: number;
     closed_rounds: number;
-    chips_in_play: number;
     last_snapshot_on: string | null;
 };
 
@@ -93,8 +101,6 @@ defineOptions({
     },
 });
 
-const isAdmin = computed(() => props.canManage);
-
 const createForm = useForm({
     total_chips: 1000,
     chips_per_player: 0,
@@ -130,7 +136,12 @@ watch(
     { immediate: true },
 );
 
+const createOpen = ref(false);
 const confirmCreateOpen = ref(false);
+
+const openCreateDialog = () => {
+    createOpen.value = true;
+};
 
 const submitCreate = () => {
     createForm
@@ -140,7 +151,13 @@ const submitCreate = () => {
         }))
         .post(RoundController.store.url(), {
             preserveScroll: true,
-            onSuccess: () => createForm.reset(),
+            onSuccess: () => {
+                createForm.reset();
+                createOpen.value = false;
+            },
+            onError: () => {
+                createOpen.value = true;
+            },
         });
 };
 
@@ -150,6 +167,7 @@ const requestCreate = () => {
     }
 
     if (props.activeRound) {
+        createOpen.value = false;
         confirmCreateOpen.value = true;
 
         return;
@@ -192,6 +210,14 @@ const formatChips = (chips: number): string => chipFormatter.format(chips);
 const formatPercent = (value: number): string =>
     `${percentFormatter.format(value)}%`;
 
+const initialChipsPerPlayer = computed(() =>
+    props.activeRound && props.activeRound.players_count > 0
+        ? Math.floor(
+              props.activeRound.total_chips / props.activeRound.players_count,
+          )
+        : null,
+);
+
 const roundStatusLabel = (status: string): string =>
     status === 'ativa' ? 'Em andamento' : 'Encerrada';
 
@@ -209,183 +235,506 @@ const visitRound = (roundId: number) => {
     <Head title="Dashboard" />
 
     <div
-        class="relative isolate flex h-full flex-1 flex-col gap-4 overflow-x-auto p-4"
+        class="relative isolate flex h-full flex-1 flex-col gap-5 overflow-x-auto p-4 md:p-6"
     >
-        <div class="grid auto-rows-min gap-4 md:grid-cols-2 xl:grid-cols-4">
-            <component
-                :is="activeRound ? Link : 'div'"
-                v-bind="
-                    activeRound
-                        ? { href: RoundController.show.url(activeRound.id) }
-                        : {}
-                "
-                class="block"
-            >
-                <Card
-                    class="h-full py-0 transition-colors"
-                    :class="activeRound ? 'hover:bg-muted/40' : ''"
+        <header class="flex flex-wrap items-end justify-between gap-4">
+            <div class="space-y-1">
+                <p
+                    class="text-xs font-medium tracking-[0.18em] text-primary uppercase"
                 >
-                    <CardContent class="flex items-center gap-4 p-4">
-                        <div
-                            class="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary"
-                        >
-                            <CalendarDays class="size-5" />
+                    Dashboard
+                </p>
+                <h1 class="text-2xl font-semibold tracking-tight md:text-3xl">
+                    Visão geral
+                </h1>
+                <p class="text-sm text-muted-foreground tabular-nums">
+                    {{ stats.total_rounds }} rodadas ·
+                    {{ stats.closed_rounds }} encerradas
+                </p>
+            </div>
+
+            <div v-if="canManage" class="flex flex-wrap items-center gap-2">
+                <Button as-child variant="outline">
+                    <Link :href="PlayerController.index.url()">
+                        <Users class="size-4" />
+                        Gerenciar jogadores
+                    </Link>
+                </Button>
+                <Button type="button" @click="openCreateDialog">
+                    <Plus class="size-4" />
+                    Nova rodada
+                </Button>
+            </div>
+        </header>
+
+        <div
+            v-if="!canManage"
+            class="flex items-center gap-2 rounded-lg border bg-muted/30 px-4 py-3 text-sm text-muted-foreground"
+        >
+            <Users class="size-4 shrink-0" />
+            Você está no modo jogador. Apenas administradores podem criar
+            rodadas e lançar fichas.
+        </div>
+
+        <Card
+            class="relative overflow-hidden border-primary/15 bg-linear-to-br from-primary/10 via-card to-card py-0"
+        >
+            <div
+                class="pointer-events-none absolute -top-24 -right-24 size-64 rounded-full bg-primary/10 blur-3xl"
+                aria-hidden="true"
+            />
+            <CardContent
+                class="relative grid gap-6 p-5 md:grid-cols-[1.35fr_1fr] md:p-6"
+            >
+                <div class="flex flex-col justify-between gap-5">
+                    <div class="space-y-4">
+                        <div class="flex flex-wrap items-center gap-2">
+                            <Badge
+                                variant="outline"
+                                :class="
+                                    activeRound
+                                        ? roundStatusClass('ativa')
+                                        : 'border-border bg-muted text-muted-foreground'
+                                "
+                            >
+                                {{
+                                    activeRound ? 'Em andamento' : 'Mesa livre'
+                                }}
+                            </Badge>
+                            <span
+                                v-if="activeRound?.starts_on"
+                                class="inline-flex items-center gap-1.5 text-xs text-muted-foreground"
+                            >
+                                <CalendarDays class="size-3.5" />
+                                Início em {{ activeRound.starts_on }}
+                            </span>
                         </div>
-                        <div class="min-w-0 space-y-0.5">
+
+                        <div class="space-y-1">
                             <p
-                                class="text-xs font-medium tracking-wide text-muted-foreground uppercase"
+                                class="text-xs font-medium tracking-[0.16em] text-muted-foreground uppercase"
                             >
                                 Rodada ativa
                             </p>
-                            <p class="text-2xl leading-tight font-semibold">
+                            <h2
+                                class="text-3xl font-semibold tracking-tight md:text-4xl"
+                            >
                                 {{
                                     activeRound
                                         ? `#${activeRound.id}`
                                         : 'Nenhuma'
                                 }}
-                            </p>
-                            <p class="truncate text-xs text-muted-foreground">
-                                {{
-                                    activeRound
-                                        ? `${formatChips(activeRound.total_chips)} fichas · ${activeRound.active_players_count} ativos`
-                                        : 'Abra a mesa.'
-                                }}
-                            </p>
-                            <p
-                                v-if="activeRound?.last_snapshot_on"
-                                class="truncate text-xs text-muted-foreground"
-                            >
-                                Último lançamento:
-                                {{ activeRound.last_snapshot_on }}
+                            </h2>
+                            <p class="max-w-xl text-sm text-muted-foreground">
+                                <template v-if="activeRound">
+                                    {{ activeRound.active_players_count }} de
+                                    {{ activeRound.players_count }} jogadores
+                                    ainda na mesa.
+                                </template>
+                                <template v-else-if="canManage">
+                                    Abra a mesa para começar a registrar os dias
+                                    da nova rodada.
+                                </template>
+                                <template v-else>
+                                    Aguarde o administrador abrir a próxima
+                                    rodada.
+                                </template>
                             </p>
                         </div>
-                    </CardContent>
-                </Card>
-            </component>
+                    </div>
 
-            <component
-                :is="isAdmin ? Link : 'div'"
-                v-bind="isAdmin ? { href: PlayerController.index.url() } : {}"
-                class="block"
-            >
-                <Card
-                    class="h-full py-0 transition-colors"
-                    :class="isAdmin ? 'hover:bg-muted/40' : ''"
-                >
-                    <CardContent class="flex items-center gap-4 p-4">
-                        <div
-                            class="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary"
-                        >
-                            <Users class="size-5" />
-                        </div>
-                        <div class="min-w-0 space-y-0.5">
-                            <p
-                                class="text-xs font-medium tracking-wide text-muted-foreground uppercase"
+                    <div class="flex flex-wrap items-center gap-2">
+                        <Button v-if="activeRound" as-child>
+                            <Link
+                                :href="RoundController.show.url(activeRound.id)"
                             >
-                                Jogadores
-                            </p>
-                            <p class="text-2xl leading-tight font-semibold">
-                                {{ stats.total_players }}
-                            </p>
-                            <p class="truncate text-xs text-muted-foreground">
-                                {{
-                                    activeRound
-                                        ? `${activeRound.active_players_count} ativos na mesa`
-                                        : 'Nenhum jogador ativo'
-                                }}
-                            </p>
-                        </div>
-                    </CardContent>
-                </Card>
-            </component>
-
-            <component
-                :is="activeRound ? Link : 'div'"
-                v-bind="
-                    activeRound
-                        ? { href: RoundController.show.url(activeRound.id) }
-                        : {}
-                "
-                class="block"
-            >
-                <Card
-                    class="h-full py-0 transition-colors"
-                    :class="activeRound ? 'hover:bg-muted/40' : ''"
-                >
-                    <CardContent class="flex items-center gap-4 p-4">
-                        <div
-                            class="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary"
+                                Abrir rodada
+                                <ArrowRight class="size-4" />
+                            </Link>
+                        </Button>
+                        <Button
+                            v-if="canManage && !activeRound"
+                            type="button"
+                            @click="openCreateDialog"
                         >
-                            <Coins class="size-5" />
-                        </div>
-                        <div class="min-w-0 space-y-0.5">
+                            <Plus class="size-4" />
+                            Criar rodada
+                        </Button>
+                        <span
+                            v-if="activeRound"
+                            class="inline-flex items-center gap-1.5 text-xs text-muted-foreground"
+                        >
+                            <Clock class="size-3.5" />
+                            {{
+                                activeRound.last_snapshot_on
+                                    ? `Último lançamento em ${activeRound.last_snapshot_on}`
+                                    : 'Nenhum lançamento registrado ainda'
+                            }}
+                        </span>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-2 gap-3 self-center">
+                    <div
+                        class="rounded-xl border bg-background/70 p-3 backdrop-blur-sm"
+                    >
+                        <div
+                            class="flex items-center gap-1.5 text-muted-foreground"
+                        >
+                            <Coins class="size-3.5" />
                             <p
-                                class="text-xs font-medium tracking-wide text-muted-foreground uppercase"
+                                class="text-[11px] font-medium tracking-wide uppercase"
                             >
                                 Fichas em jogo
                             </p>
-                            <p class="text-2xl leading-tight font-semibold">
-                                {{
-                                    activeRound
-                                        ? formatChips(stats.chips_in_play)
-                                        : '—'
-                                }}
-                            </p>
-                            <p class="truncate text-xs text-muted-foreground">
-                                {{
-                                    activeRound
-                                        ? `Total da rodada #${activeRound.id}`
-                                        : 'Nenhuma rodada ativa'
-                                }}
-                            </p>
                         </div>
-                    </CardContent>
-                </Card>
-            </component>
-
-            <a href="#historico" class="block">
-                <Card class="h-full py-0 transition-colors hover:bg-muted/40">
-                    <CardContent class="flex items-center gap-4 p-4">
-                        <div
-                            class="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary"
+                        <p
+                            class="mt-1 truncate text-lg font-semibold tabular-nums"
                         >
-                            <Flag class="size-5" />
-                        </div>
-                        <div class="min-w-0 space-y-0.5">
-                            <p
-                                class="text-xs font-medium tracking-wide text-muted-foreground uppercase"
-                            >
-                                Rodadas
-                            </p>
-                            <p class="text-2xl leading-tight font-semibold">
-                                {{ stats.total_rounds }}
-                            </p>
-                            <p class="truncate text-xs text-muted-foreground">
-                                {{ stats.closed_rounds }} encerradas
-                            </p>
-                            <p class="truncate text-xs text-muted-foreground">
-                                Atualizado em: {{ stats.last_snapshot_on ?? '—' }}
-                            </p>
-                        </div>
-                    </CardContent>
-                </Card>
-            </a>
-        </div>
+                            {{
+                                activeRound
+                                    ? formatChips(activeRound.total_chips)
+                                    : '—'
+                            }}
+                        </p>
+                        <p
+                            class="truncate text-[11px] text-muted-foreground tabular-nums"
+                        >
+                            {{
+                                initialChipsPerPlayer === null
+                                    ? '—'
+                                    : `${formatChips(initialChipsPerPlayer)} iniciais por jogador`
+                            }}
+                        </p>
+                    </div>
 
-        <div class="grid gap-4 xl:grid-cols-2">
-            <Card v-if="canManage" class="xl:col-span-2">
+                    <div
+                        class="rounded-xl border bg-background/70 p-3 backdrop-blur-sm"
+                    >
+                        <div
+                            class="flex items-center gap-1.5 text-muted-foreground"
+                        >
+                            <Trophy class="size-3.5" />
+                            <p
+                                class="text-[11px] font-medium tracking-wide uppercase"
+                            >
+                                Líder da rodada
+                            </p>
+                        </div>
+                        <p class="mt-1 truncate text-lg font-semibold">
+                            {{ activeRound?.leader?.name ?? '—' }}
+                        </p>
+                        <p
+                            v-if="activeRound?.leader"
+                            class="truncate text-[11px] text-muted-foreground"
+                        >
+                            {{ formatChips(activeRound.leader.chips) }} fichas
+                            <span v-if="activeRound.leader.tied">
+                                · {{ activeRound.leader.count }} empatados
+                            </span>
+                        </p>
+                        <p
+                            v-else
+                            class="truncate text-[11px] text-muted-foreground"
+                        >
+                            {{
+                                activeRound
+                                    ? 'Sem jogadores ativos'
+                                    : 'Sem rodada ativa'
+                            }}
+                        </p>
+                    </div>
+                </div>
+            </CardContent>
+        </Card>
+
+        <div class="grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
+            <Card id="ranking" class="scroll-mt-24">
                 <CardHeader>
-                    <CardTitle>Criar rodada</CardTitle>
-                    <CardDescription v-if="activeRound">
-                        A nova rodada encerra a #{{ activeRound.id }}.
+                    <CardTitle>Ranking de vitórias</CardTitle>
+                    <CardDescription v-if="leaderWins > 0 && leaderCount > 1">
+                        Empate no topo: {{ leaderCount }} jogadores com
+                        {{ leaderWins }}
+                        {{ leaderWins === 1 ? 'vitória' : 'vitórias' }}.
                     </CardDescription>
                     <CardDescription v-else>
-                        Defina o total e quem senta à mesa.
+                        Vitórias em rodadas encerradas.
                     </CardDescription>
                 </CardHeader>
 
                 <CardContent>
-                    <form class="space-y-4" @submit.prevent="requestCreate">
+                    <div
+                        v-if="ranking.length"
+                        class="overflow-x-auto rounded-lg border"
+                    >
+                        <table class="w-full text-sm">
+                            <thead
+                                class="bg-muted/50 text-left text-[11px] tracking-wide text-muted-foreground uppercase"
+                            >
+                                <tr>
+                                    <th class="px-3 py-2.5 font-medium">#</th>
+                                    <th class="px-3 py-2.5 font-medium">
+                                        Jogador
+                                    </th>
+                                    <th
+                                        class="px-3 py-2.5 text-center font-medium"
+                                    >
+                                        Vitórias
+                                    </th>
+                                    <th
+                                        class="px-3 py-2.5 text-center font-medium"
+                                    >
+                                        Rodadas
+                                    </th>
+                                    <th
+                                        class="px-3 py-2.5 text-center font-medium"
+                                    >
+                                        Aproveitamento
+                                    </th>
+                                    <th
+                                        class="px-3 py-2.5 text-center font-medium"
+                                    >
+                                        Sequência
+                                    </th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr
+                                    v-for="(entry, index) in ranking"
+                                    :key="entry.id"
+                                    class="border-t transition-colors hover:bg-muted/30"
+                                    :class="
+                                        isLeader(entry) ? 'bg-primary/5' : ''
+                                    "
+                                >
+                                    <td class="px-3 py-2.5">
+                                        <span
+                                            class="flex size-6 items-center justify-center rounded-full text-xs font-semibold"
+                                            :class="
+                                                isLeader(entry)
+                                                    ? 'bg-primary/10 text-primary'
+                                                    : 'bg-muted text-muted-foreground'
+                                            "
+                                        >
+                                            {{ index + 1 }}
+                                        </span>
+                                    </td>
+                                    <td class="px-3 py-2.5">
+                                        <span
+                                            class="inline-flex items-center gap-1.5 font-medium"
+                                        >
+                                            <Trophy
+                                                v-if="isLeader(entry)"
+                                                class="size-3.5 text-primary"
+                                            />
+                                            {{ entry.name }}
+                                        </span>
+                                    </td>
+                                    <td class="px-3 py-2.5 text-center">
+                                        {{ entry.wins }}
+                                    </td>
+                                    <td class="px-3 py-2.5 text-center">
+                                        {{ entry.rounds_played }}
+                                    </td>
+                                    <td
+                                        class="px-3 py-2.5 text-center text-xs tabular-nums"
+                                    >
+                                        {{
+                                            entry.win_rate === null
+                                                ? '—'
+                                                : formatPercent(entry.win_rate)
+                                        }}
+                                    </td>
+                                    <td class="px-3 py-2.5 text-center">
+                                        <span
+                                            v-if="entry.streak > 0"
+                                            class="inline-flex items-center gap-1 font-medium"
+                                        >
+                                            <Flame
+                                                v-if="entry.streak >= 2"
+                                                class="size-3.5 text-amber-500"
+                                            />
+                                            {{ entry.streak }}
+                                        </span>
+                                        <span
+                                            v-else
+                                            class="text-muted-foreground"
+                                        >
+                                            –
+                                        </span>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <p v-else class="text-sm text-muted-foreground">
+                        Sem jogadores cadastrados ainda.
+                    </p>
+                </CardContent>
+            </Card>
+
+            <Card id="historico" class="scroll-mt-24">
+                <CardHeader>
+                    <CardTitle>Histórico de rodadas</CardTitle>
+                    <CardDescription>
+                        Consulte informações de rodadas passadas.
+                    </CardDescription>
+                </CardHeader>
+
+                <CardContent>
+                    <template v-if="rounds.length">
+                        <div class="overflow-x-auto rounded-lg border">
+                            <table class="w-full text-sm">
+                                <thead
+                                    class="bg-muted/50 text-left text-[11px] tracking-wide text-muted-foreground uppercase"
+                                >
+                                    <tr>
+                                        <th
+                                            class="px-3 py-2.5 text-left font-medium"
+                                        >
+                                            Rodada
+                                        </th>
+                                        <th
+                                            class="px-3 py-2.5 text-center font-medium"
+                                        >
+                                            Início
+                                        </th>
+                                        <th
+                                            class="px-3 py-2.5 text-center font-medium"
+                                        >
+                                            Jogadores
+                                        </th>
+                                        <th
+                                            class="px-3 py-2.5 text-center font-medium"
+                                        >
+                                            Vencedor
+                                        </th>
+                                        <th
+                                            class="px-3 py-2.5 text-center font-medium"
+                                        >
+                                            Status
+                                        </th>
+                                        <th class="px-3 py-2.5"></th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr
+                                        v-for="round in visibleHistoryRounds"
+                                        :key="round.id"
+                                        class="cursor-pointer border-t transition-colors hover:bg-muted/30 focus-visible:bg-muted/50 focus-visible:outline-none"
+                                        tabindex="0"
+                                        role="link"
+                                        @click="visitRound(round.id)"
+                                        @keydown.enter="visitRound(round.id)"
+                                    >
+                                        <td
+                                            class="px-3 py-2.5 text-left font-medium"
+                                        >
+                                            #{{ round.id }}
+                                        </td>
+                                        <td class="px-3 py-2.5 text-center">
+                                            {{ round.starts_on ?? '—' }}
+                                        </td>
+                                        <td class="px-3 py-2.5 text-center">
+                                            {{ round.players_count }}
+                                        </td>
+                                        <td class="px-3 py-2.5 text-center">
+                                            <span
+                                                v-if="round.winner"
+                                                class="inline-flex items-center gap-1.5"
+                                            >
+                                                <Trophy
+                                                    class="size-3.5 text-primary"
+                                                />
+                                                <span class="max-w-36 truncate">
+                                                    {{ round.winner }}
+                                                </span>
+                                            </span>
+                                            <span
+                                                v-else-if="round.tie"
+                                                class="text-muted-foreground"
+                                            >
+                                                Empate
+                                            </span>
+                                            <span
+                                                v-else
+                                                class="text-muted-foreground"
+                                            >
+                                                —
+                                            </span>
+                                        </td>
+                                        <td class="px-3 py-2.5 text-center">
+                                            <Badge
+                                                variant="outline"
+                                                :class="
+                                                    roundStatusClass(
+                                                        round.status,
+                                                    )
+                                                "
+                                            >
+                                                {{
+                                                    roundStatusLabel(
+                                                        round.status,
+                                                    )
+                                                }}
+                                            </Badge>
+                                        </td>
+                                        <td class="px-3 py-2.5 text-right">
+                                            <ChevronRight
+                                                class="ml-auto size-4 text-muted-foreground"
+                                            />
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <div
+                            v-if="hasMoreHistoryRounds"
+                            class="mt-3 flex justify-center"
+                        >
+                            <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                :aria-expanded="showAllHistory"
+                                @click="showAllHistory = !showAllHistory"
+                            >
+                                <component
+                                    :is="
+                                        showAllHistory ? ChevronUp : ChevronDown
+                                    "
+                                />
+                                {{ showAllHistory ? 'Ver menos' : 'Ver mais' }}
+                            </Button>
+                        </div>
+                    </template>
+
+                    <p v-else class="text-sm text-muted-foreground">
+                        Nenhuma rodada ainda. Que coragem a de vocês.
+                    </p>
+                </CardContent>
+            </Card>
+        </div>
+
+        <Dialog v-if="canManage" v-model:open="createOpen">
+            <DialogContent class="max-h-[90dvh] overflow-y-auto sm:max-w-2xl">
+                <DialogHeader>
+                    <DialogTitle>Nova rodada</DialogTitle>
+                    <DialogDescription v-if="activeRound">
+                        A nova rodada encerra a #{{ activeRound.id }}
+                        automaticamente.
+                    </DialogDescription>
+                    <DialogDescription v-else>
+                        Defina o total de fichas e quem senta à mesa.
+                    </DialogDescription>
+                </DialogHeader>
+
+                <form class="space-y-4" @submit.prevent="requestCreate">
+                    <div
+                        class="grid gap-4 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)]"
+                    >
                         <div class="grid gap-2">
                             <Label for="total_chips">Total de fichas</Label>
                             <input
@@ -439,277 +788,46 @@ const visitRound = (roundId: number) => {
                                 :message="createForm.errors.chips_per_player"
                             />
                         </div>
-
-                        <div class="grid gap-2">
-                            <Label>Quem vai jogar?</Label>
-                            <div
-                                class="grid max-h-56 gap-2 overflow-y-auto rounded-lg border p-3 sm:grid-cols-2"
-                            >
-                                <label
-                                    v-for="user in users"
-                                    :key="user.id"
-                                    class="flex items-center gap-2 text-sm"
-                                >
-                                    <input
-                                        v-model="createForm.user_ids"
-                                        :value="user.id"
-                                        type="checkbox"
-                                        class="size-4 rounded border-input accent-primary"
-                                    />
-                                    {{ user.name }}
-                                </label>
-                            </div>
-                            <InputError :message="createForm.errors.user_ids" />
-                        </div>
-
-                        <div class="flex justify-end">
-                            <Button
-                                type="submit"
-                                :disabled="
-                                    createForm.processing || !canCreateRound
-                                "
-                            >
-                                Criar rodada
-                            </Button>
-                        </div>
-                    </form>
-                </CardContent>
-            </Card>
-
-            <Card v-else class="xl:col-span-2">
-                <CardHeader>
-                    <CardTitle>Modo jogador</CardTitle>
-                    <CardDescription>
-                        Apenas o administrador pode criar rodadas e lançar
-                        fichas. Você pode acompanhar o ranking e o histórico
-                        normalmente.
-                    </CardDescription>
-                </CardHeader>
-            </Card>
-        </div>
-        <div class="grid gap-4 xl:grid-cols-2">
-            
-
-            <Card id="ranking" class="scroll-mt-24">
-                <CardHeader>
-                    <CardTitle>Ranking de vitórias</CardTitle>
-                    <CardDescription v-if="leaderWins > 0 && leaderCount > 1">
-                        Empate no topo: {{ leaderCount }} jogadores com
-                        {{ leaderWins }}
-                        {{ leaderWins === 1 ? 'vitória' : 'vitórias' }}.
-                    </CardDescription>
-                    <CardDescription v-else>
-                        Vitórias em rodadas encerradas.
-                    </CardDescription>
-                </CardHeader>
-
-                <CardContent>
-                    <div
-                        v-if="ranking.length"
-                        class="overflow-x-auto rounded-lg border"
-                    >
-                        <table class="w-full text-sm">
-                            <thead
-                                class="bg-muted/50 text-left text-muted-foreground"
-                            >
-                                <tr>
-                                    <th class="px-3 py-2 font-medium">#</th>
-                                    <th class="px-3 py-2 font-medium">
-                                        Jogador
-                                    </th>
-                                    <th
-                                        class="px-3 py-2 text-center font-medium"
-                                    >
-                                        Vitórias
-                                    </th>
-                                    <th
-                                        class="px-3 py-2 text-center font-medium"
-                                    >
-                                        Rodadas jogadas
-                                    </th>
-                                    <th
-                                        class="px-3 py-2 text-center font-medium"
-                                    >
-                                        Taxa
-                                    </th>
-                                    <th
-                                        class="px-3 py-2 text-center font-medium"
-                                    >
-                                        Sequência
-                                    </th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <tr
-                                    v-for="(entry, index) in ranking"
-                                    :key="entry.id"
-                                    class="border-t"
-                                    :class="
-                                        isLeader(entry) ? 'bg-primary/5' : ''
-                                    "
-                                >
-                                    <td class="px-3 py-2 text-muted-foreground">
-                                        {{ index + 1 }}
-                                    </td>
-                                    <td class="px-3 py-2">
-                                        <span
-                                            class="inline-flex items-center gap-1.5"
-                                        >
-                                            <Trophy
-                                                v-if="isLeader(entry)"
-                                                class="size-3.5 text-primary"
-                                            />
-                                            {{ entry.name }}
-                                        </span>
-                                    </td>
-                                    <td class="px-3 py-2 text-center">
-                                        {{ entry.wins }}
-                                    </td>
-                                    <td class="px-3 py-2 text-center">
-                                        {{ entry.rounds_played }}
-                                    </td>
-                                    <td class="px-3 py-2 text-center">
-                                        {{
-                                            entry.win_rate === null
-                                                ? '—'
-                                                : formatPercent(entry.win_rate)
-                                        }}
-                                    </td>
-                                    <td class="px-3 py-2 text-center">
-                                        <span class="whitespace-nowrap">
-                                            {{
-                                                entry.streak === 0
-                                                    ? '–'
-                                                    : entry.streak
-                                            }}
-                                            <span v-if="entry.streak >= 2">
-                                                🔥
-                                            </span>
-                                        </span>
-                                    </td>
-                                </tr>
-                            </tbody>
-                        </table>
                     </div>
 
-                    <p v-else class="text-sm text-muted-foreground">
-                        Ninguém na mesa. Cadê o pessoal?
-                    </p>
-                </CardContent>
-            </Card>
-
-            <Card id="historico" class="scroll-mt-24">
-                <CardHeader>
-                    <CardTitle>Histórico de rodadas</CardTitle>
-                    <CardDescription>
-                        Da primeira à última mão.
-                    </CardDescription>
-                </CardHeader>
-
-                <CardContent>
-                    <template v-if="rounds.length">
-                        <div class="overflow-x-auto rounded-lg border">
-                            <table class="w-full text-sm">
-                                <thead
-                                    class="bg-muted/50 text-left text-muted-foreground"
-                                >
-                                    <tr>
-                                        <th class="px-3 py-2 text-left font-medium">
-                                            Rodada
-                                        </th>
-                                        <th class="px-3 py-2 text-center font-medium">
-                                            Início
-                                        </th>
-                                        <th class="px-3 py-2 text-center font-medium">
-                                            Jogadores
-                                        </th>
-                                        <th class="px-3 py-2 text-center font-medium">
-                                            Vencedor
-                                        </th>
-                                        <th class="px-3 py-2 text-center font-medium">
-                                            Status
-                                        </th>
-                                        <th class="px-3 py-2"></th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    <tr
-                                        v-for="round in visibleHistoryRounds"
-                                        :key="round.id"
-                                        class="cursor-pointer border-t transition-colors hover:bg-muted/50 focus-visible:bg-muted/50 focus-visible:outline-none"
-                                        tabindex="0"
-                                        role="link"
-                                        @click="visitRound(round.id)"
-                                        @keydown.enter="visitRound(round.id)"
-                                    >
-                                        <td class="px-3 py-2 text-left font-medium">
-                                            #{{ round.id }}
-                                        </td>
-                                        <td class="px-3 py-2 text-center">
-                                            {{ round.starts_on ?? '—' }}
-                                        </td>
-                                        <td class="px-3 py-2 text-center">
-                                            {{ round.players_count }}
-                                        </td>
-                                        <td class="px-3 py-2 text-center">
-                                            {{
-                                                round.winner ??
-                                                (round.tie ? 'Empate' : '—')
-                                            }}
-                                        </td>
-                                        <td class="px-3 py-2 text-center">
-                                            <Badge
-                                                variant="outline"
-                                                :class="
-                                                    roundStatusClass(
-                                                        round.status,
-                                                    )
-                                                "
-                                            >
-                                                {{
-                                                    roundStatusLabel(
-                                                        round.status,
-                                                    )
-                                                }}
-                                            </Badge>
-                                        </td>
-                                        <td class="px-3 py-2 text-right">
-                                            <ChevronRight
-                                                class="ml-auto size-4 text-muted-foreground"
-                                            />
-                                        </td>
-                                    </tr>
-                                </tbody>
-                            </table>
-                        </div>
-
+                    <div class="grid gap-2">
+                        <Label>Quem vai jogar?</Label>
                         <div
-                            v-if="hasMoreHistoryRounds"
-                            class="mt-3 flex justify-center"
+                            class="grid max-h-56 gap-2 overflow-y-auto rounded-lg border p-3 sm:grid-cols-2"
                         >
-                            <Button
-                                type="button"
-                                variant="outline"
-                                size="sm"
-                                :aria-expanded="showAllHistory"
-                                @click="showAllHistory = !showAllHistory"
+                            <label
+                                v-for="user in users"
+                                :key="user.id"
+                                class="flex items-center gap-2 text-sm"
                             >
-                                <component
-                                    :is="
-                                        showAllHistory ? ChevronUp : ChevronDown
-                                    "
+                                <input
+                                    v-model="createForm.user_ids"
+                                    :value="user.id"
+                                    type="checkbox"
+                                    class="size-4 rounded border-input accent-primary"
                                 />
-                                {{ showAllHistory ? 'Ver menos' : 'Ver mais' }}
-                            </Button>
+                                {{ user.name }}
+                            </label>
                         </div>
-                    </template>
+                        <InputError :message="createForm.errors.user_ids" />
+                    </div>
 
-                    <p v-else class="text-sm text-muted-foreground">
-                        Nenhuma rodada ainda. Que coragem a de vocês.
-                    </p>
-                </CardContent>
-            </Card>
-        </div>
+                    <DialogFooter>
+                        <DialogClose as-child>
+                            <Button type="button" variant="outline">
+                                Cancelar
+                            </Button>
+                        </DialogClose>
+                        <Button
+                            type="submit"
+                            :disabled="createForm.processing || !canCreateRound"
+                        >
+                            {{ activeRound ? 'Continuar' : 'Criar rodada' }}
+                        </Button>
+                    </DialogFooter>
+                </form>
+            </DialogContent>
+        </Dialog>
 
         <Dialog v-if="activeRound" v-model:open="confirmCreateOpen">
             <DialogContent>
@@ -718,18 +836,17 @@ const visitRound = (roundId: number) => {
                         Encerrar a rodada #{{ activeRound.id }}?
                     </DialogTitle>
                     <DialogDescription>
-                        Isso encerra a rodada #{{ activeRound.id }} e abre a
-                        próxima. Continuar?
+                        Isso encerra a rodada atual e cria a nova com os
+                        jogadores selecionados. Continuar?
                     </DialogDescription>
                 </DialogHeader>
                 <DialogFooter>
                     <DialogClose as-child>
                         <Button variant="outline">Cancelar</Button>
                     </DialogClose>
-                    <Button @click="confirmCreate">Continuar</Button>
+                    <Button @click="confirmCreate">Encerrar e criar</Button>
                 </DialogFooter>
             </DialogContent>
         </Dialog>
-
     </div>
 </template>

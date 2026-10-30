@@ -31,7 +31,6 @@ class DashboardController extends Controller
                 'total_players' => $users->count(),
                 'total_rounds' => $rounds->count(),
                 'closed_rounds' => $rounds->where('status', 'encerrada')->count(),
-                'chips_in_play' => $activeRound?->total_chips ?? 0,
                 'last_snapshot_on' => $lastSnapshotOn ? Carbon::parse($lastSnapshotOn)->format('d/m/Y') : null,
             ],
             'activeRound' => $activeRound ? $this->activeRoundData($activeRound) : null,
@@ -54,15 +53,25 @@ class DashboardController extends Controller
     private function activeRoundData(Round $round): array
     {
         $lastSnapshotOn = $round->snapshots()->max('recorded_on');
+        $activePlayers = $round->players
+            ->filter(fn (User $user) => $user->pivot->eliminated_at === null);
+        $leaderChips = $activePlayers->max(fn (User $user) => (int) $user->pivot->chips);
+        $leaders = $leaderChips === null || $leaderChips <= 0
+            ? collect()
+            : $activePlayers->filter(fn (User $user) => (int) $user->pivot->chips === $leaderChips);
 
         return [
             'id' => $round->id,
             'starts_on' => $round->starts_on->format('d/m/Y'),
             'total_chips' => $round->total_chips,
             'players_count' => $round->players->count(),
-            'active_players_count' => $round->players
-                ->filter(fn (User $user) => $user->pivot->eliminated_at === null)
-                ->count(),
+            'active_players_count' => $activePlayers->count(),
+            'leader' => $leaders->isEmpty() ? null : [
+                'name' => $leaders->count() === 1 ? $leaders->first()->name : 'Empate',
+                'chips' => (int) $leaderChips,
+                'tied' => $leaders->count() > 1,
+                'count' => $leaders->count(),
+            ],
             'last_snapshot_on' => $lastSnapshotOn ? Carbon::parse($lastSnapshotOn)->format('d/m/Y') : null,
         ];
     }
