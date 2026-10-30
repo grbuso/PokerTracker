@@ -25,6 +25,19 @@ test('new users can register', function () {
     $response->assertRedirect(route('dashboard', absolute: false));
 });
 
+test('passwords must have at least eight characters', function () {
+    $response = $this->post(route('register.store'), [
+        'name' => 'Test User',
+        'email' => 'test@example.com',
+        'password' => '1234567',
+        'password_confirmation' => '1234567',
+    ]);
+
+    $response->assertSessionHasErrors('password');
+
+    expect(User::query()->where('email', 'test@example.com')->exists())->toBeFalse();
+});
+
 test('new users are not administrators', function () {
     $this->post(route('register.store'), [
         'name' => 'Test User',

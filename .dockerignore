@@ -1,0 +1,14 @@
+.git
+.env
+.env.backup
+.env.production
+vendor
+node_modules
+public/build
+bootstrap/cache/*.php
+storage/framework
+storage/logs
+storage/pail
+database/data
+.idea
+.vscode
