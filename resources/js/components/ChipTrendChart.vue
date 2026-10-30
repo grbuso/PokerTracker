@@ -159,10 +159,10 @@ const isPointHovered = (playerId: number, day: string): boolean =>
 const truncate = (value: string, maxLength: number): string =>
     value.length > maxLength ? `${value.slice(0, maxLength - 1)}…` : value;
 
-const tooltipHeight = 32;
+const tooltipHeight = 44;
 
 const tooltipName = computed(() =>
-    hoveredPoint.value ? truncate(hoveredPoint.value.name, 24) : '',
+    hoveredPoint.value ? truncate(hoveredPoint.value.name, 30) : '',
 );
 
 const tooltipDetail = computed(() => {
@@ -174,12 +174,10 @@ const tooltipDetail = computed(() => {
 });
 
 const tooltipWidth = computed(() => {
-    const longest = Math.max(
-        tooltipName.value.length,
-        tooltipDetail.value.length,
-    );
+    const nameWidth = tooltipName.value.length * 6.2 + 24;
+    const detailWidth = tooltipDetail.value.length * 5.2 + 20;
 
-    return Math.min(160, Math.max(80, longest * 4.6 + 20));
+    return Math.min(220, Math.max(100, nameWidth, detailWidth));
 });
 
 const tooltipPosition = computed(() => {
@@ -320,24 +318,24 @@ const tooltipPosition = computed(() => {
                             stroke="var(--border)"
                         />
                         <circle
-                            cx="9"
-                            cy="10.5"
-                            r="2"
+                            cx="12"
+                            cy="14"
+                            r="2.5"
                             :fill="hoveredPoint.color"
                         />
                         <text
-                            x="15"
-                            y="13"
-                            font-size="8"
+                            x="19"
+                            y="17"
+                            font-size="11"
                             font-weight="600"
                             class="fill-popover-foreground"
                         >
                             {{ tooltipName }}
                         </text>
                         <text
-                            x="9"
-                            y="25"
-                            font-size="7"
+                            x="12"
+                            y="34"
+                            font-size="9"
                             class="fill-muted-foreground"
                         >
                             {{ tooltipDetail }}
