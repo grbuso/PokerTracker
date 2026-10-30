@@ -1,13 +1,6 @@
 <script setup lang="ts">
 import { Head, Link, router, useForm } from '@inertiajs/vue3';
-import {
-    CalendarDays,
-    Flag,
-    Trash2,
-    Trophy,
-    UserX,
-    Users,
-} from '@lucide/vue';
+import { CalendarDays, Flag, Trash2, Trophy, UserX, Users } from '@lucide/vue';
 import { computed, ref, watch } from 'vue';
 import RoundController from '@/actions/App/Http/Controllers/RoundController';
 import ChipTrendChart from '@/components/ChipTrendChart.vue';
@@ -68,10 +61,87 @@ const activePlayers = computed(() =>
     props.round.players.filter((player) => !player.pivot.eliminated_at),
 );
 
+const isoToDisplay = (iso: string): string => {
+    const [year, month, day] = iso.split('-');
+
+    return year && month && day ? `${day}/${month}/${year}` : '';
+};
+
+const displayToIso = (display: string): string => {
+    const match = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(display);
+
+    if (!match) {
+        return '';
+    }
+
+    const [, day, month, year] = match;
+    const date = new Date(
+        Date.UTC(Number(year), Number(month) - 1, Number(day)),
+    );
+    const isValid =
+        date.getUTCFullYear() === Number(year) &&
+        date.getUTCMonth() === Number(month) - 1 &&
+        date.getUTCDate() === Number(day);
+
+    return isValid ? `${year}-${month}-${day}` : '';
+};
+
+const maskDate = (value: string): string => {
+    const digits = value.replace(/\D/g, '').slice(0, 8);
+
+    if (digits.length <= 2) {
+        return digits;
+    }
+
+    if (digits.length <= 4) {
+        return `${digits.slice(0, 2)}/${digits.slice(2)}`;
+    }
+
+    return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`;
+};
+
 const form = useForm({
     recorded_on: new Date().toLocaleDateString('sv-SE'),
     chips: {} as Record<number, number>,
 });
+
+const recordedOnDisplay = ref(isoToDisplay(form.recorded_on));
+
+const dateInput = ref<HTMLInputElement | null>(null);
+
+const openDatePicker = () => {
+    const input = dateInput.value;
+
+    if (!input) {
+        return;
+    }
+
+    if (typeof input.showPicker === 'function') {
+        input.showPicker();
+    } else {
+        input.focus();
+    }
+};
+
+const onDateInput = (event: Event) => {
+    const target = event.target as HTMLInputElement;
+    const formatted = maskDate(target.value);
+
+    recordedOnDisplay.value = formatted;
+    target.value = formatted;
+    form.recorded_on = displayToIso(formatted);
+};
+
+const onDatePicked = (event: Event) => {
+    const target = event.target as HTMLInputElement;
+
+    form.recorded_on = target.value;
+    recordedOnDisplay.value = isoToDisplay(target.value);
+};
+
+const eliminate = (player: Player) => {
+    form.chips[player.id] = 0;
+};
 
 const activePlayersKey = computed(() =>
     activePlayers.value
@@ -105,8 +175,16 @@ const sumMatches = computed(() => sum.value === props.round.total_chips);
 
 const isActive = computed(() => props.round.status === 'ativa');
 
+const dateIsValid = computed(
+    () => displayToIso(recordedOnDisplay.value) !== '',
+);
+
 const canSave = computed(
-    () => isActive.value && activePlayers.value.length > 0 && sumMatches.value,
+    () =>
+        isActive.value &&
+        activePlayers.value.length > 0 &&
+        sumMatches.value &&
+        dateIsValid.value,
 );
 
 const statusLabel = computed(() =>
@@ -267,7 +345,9 @@ const submit = () => {
                         >
                             Líder
                         </p>
-                        <p class="truncate text-2xl leading-tight font-semibold">
+                        <p
+                            class="truncate text-2xl leading-tight font-semibold"
+                        >
                             {{ leader?.name ?? '—' }}
                         </p>
                         <p class="truncate text-xs text-muted-foreground">
@@ -373,7 +453,9 @@ const submit = () => {
                         Atualize as fichas dos jogadores que continuam na
                         rodada.
                     </CardDescription>
-                    <CardDescription v-else-if="isActive && activePlayers.length == 0">
+                    <CardDescription
+                        v-else-if="isActive && activePlayers.length == 0"
+                    >
                         Todos os jogadores desta rodada foram eliminados.
                     </CardDescription>
                 </CardHeader>
@@ -387,12 +469,38 @@ const submit = () => {
                         <div class="flex flex-wrap items-end gap-4">
                             <div class="grid gap-2">
                                 <Label for="recorded_on">Data</Label>
-                                <input
-                                    id="recorded_on"
-                                    v-model="form.recorded_on"
-                                    type="date"
-                                    class="h-9 rounded-md border border-input bg-transparent px-3 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
-                                />
+                                <div
+                                    class="relative flex h-9 w-fit items-center overflow-hidden rounded-md border border-input shadow-xs focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/50"
+                                >
+                                    <input
+                                        id="recorded_on"
+                                        v-model="recordedOnDisplay"
+                                        type="text"
+                                        inputmode="numeric"
+                                        autocomplete="off"
+                                        maxlength="10"
+                                        placeholder="DD/MM/AAAA"
+                                        class="h-full w-28 bg-transparent pr-2 pl-3 text-sm outline-none placeholder:text-muted-foreground"
+                                        @input="onDateInput"
+                                    />
+                                    <input
+                                        ref="dateInput"
+                                        type="date"
+                                        tabindex="-1"
+                                        aria-hidden="true"
+                                        :value="form.recorded_on"
+                                        class="pointer-events-none absolute inset-0 h-full w-full [color-scheme:light] opacity-0 dark:[color-scheme:dark]"
+                                        @change="onDatePicked"
+                                    />
+                                    <button
+                                        type="button"
+                                        class="flex h-full w-9 items-center justify-center border-l border-input text-muted-foreground transition-colors outline-none hover:bg-muted hover:text-foreground focus-visible:bg-muted focus-visible:text-foreground"
+                                        aria-label="Abrir calendário"
+                                        @click="openDatePicker"
+                                    >
+                                        <CalendarDays class="size-4" />
+                                    </button>
+                                </div>
                                 <InputError
                                     :message="form.errors.recorded_on"
                                 />
@@ -418,7 +526,9 @@ const submit = () => {
                                         <th class="px-3 py-2 font-medium">
                                             Jogador
                                         </th>
-                                        <th class="px-3 py-2 font-medium">
+                                        <th
+                                            class="px-3 py-2 text-center font-medium"
+                                        >
                                             Fichas
                                         </th>
                                     </tr>
@@ -445,19 +555,42 @@ const submit = () => {
                                                 {{ player.name }}
                                             </span>
                                         </td>
-                                        <td class="px-3 py-2">
-                                            <input
+                                        <td class="px-3 py-2 text-center">
+                                            <div
                                                 v-if="
                                                     !player.pivot.eliminated_at
                                                 "
-                                                v-model.number="
-                                                    form.chips[player.id]
-                                                "
-                                                type="number"
-                                                inputmode="numeric"
-                                                min="0"
-                                                class="h-8 w-24 rounded-md border border-input bg-transparent px-2 text-center text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
-                                            />
+                                                class="grid grid-cols-[1fr_auto_1fr] items-center"
+                                            >
+                                                <span aria-hidden="true" />
+                                                <input
+                                                    v-model.number="
+                                                        form.chips[player.id]
+                                                    "
+                                                    type="number"
+                                                    inputmode="numeric"
+                                                    min="0"
+                                                    class="h-8 w-24 rounded-md border border-input bg-transparent px-2 text-center text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                                                />
+                                                <Button
+                                                    type="button"
+                                                    variant="ghost"
+                                                    size="icon-sm"
+                                                    class="ml-2 size-7 justify-self-start text-muted-foreground hover:bg-muted hover:text-foreground"
+                                                    :disabled="
+                                                        Number(
+                                                            form.chips[
+                                                                player.id
+                                                            ] ?? 0,
+                                                        ) === 0
+                                                    "
+                                                    :aria-label="`Eliminar ${player.name} e zerar as fichas`"
+                                                    title="Eliminar (zerar fichas)"
+                                                    @click="eliminate(player)"
+                                                >
+                                                    <UserX class="size-3.5" />
+                                                </Button>
+                                            </div>
                                             <Badge
                                                 v-else
                                                 variant="outline"
@@ -508,7 +641,7 @@ const submit = () => {
                     <p
                         v-else-if="!canManage"
                         class="text-sm text-muted-foreground"
-                        >
+                    >
                         Apenas o administrador pode registrar as fichas do dia.
                     </p>
                     <p v-else class="text-sm text-muted-foreground">

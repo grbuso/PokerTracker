@@ -314,7 +314,7 @@ const deleteBlockedReason = (player: Player): string | null => {
                                 type="password"
                                 required
                                 autocomplete="new-password"
-                                placeholder="Repita a senha"
+                                placeholder="Confirmar senha"
                             />
                         </div>
 
