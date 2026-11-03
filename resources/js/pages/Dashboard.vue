@@ -402,7 +402,7 @@ const visitRound = (roundId: number) => {
                         >
                             {{
                                 initialChipsPerPlayer === null
-                                    ? '—'
+                                    ? 'Sem rodada ativa'
                                     : `${formatChips(initialChipsPerPlayer)} iniciais por jogador`
                             }}
                         </p>
@@ -727,7 +727,7 @@ const visitRound = (roundId: number) => {
                         automaticamente.
                     </DialogDescription>
                     <DialogDescription v-else>
-                        Defina o total de fichas e quem senta à mesa.
+                        Defina o total de fichas e os participantes da rodada
                     </DialogDescription>
                 </DialogHeader>
 
@@ -750,43 +750,49 @@ const visitRound = (roundId: number) => {
                             />
                         </div>
 
-                        <div class="rounded-lg border bg-muted/30 p-3 text-sm">
+                        <div class="grid content-start gap-2">
+                            <Label>Fichas por jogador</Label>
                             <div
-                                class="flex flex-wrap items-center justify-between gap-2"
+                                class="rounded-lg border bg-muted/30 p-3 text-sm"
                             >
-                                <span
-                                    v-if="selectedPlayersCount >= 2"
-                                    class="font-medium"
+                                <div
+                                    class="flex flex-wrap items-center justify-between gap-2"
                                 >
-                                    {{ chipsPerPlayer }} por jogador
-                                </span>
-                                <span v-else class="text-muted-foreground">
-                                    Escolha pelo menos 2 jogadores
-                                </span>
-                                <span class="text-muted-foreground">
-                                    {{ selectedPlayersCount }}
+                                    <span
+                                        v-if="selectedPlayersCount >= 2"
+                                    >
+                                        {{ chipsPerPlayer }}
+                                    </span>
+                                    <span v-else class="text-muted-foreground">
+                                        Escolha pelo menos 2 jogadores
+                                    </span>
+                                    <span class="text-muted-foreground">
+                                        {{ selectedPlayersCount }}
+                                        {{
+                                            selectedPlayersCount === 1
+                                                ? 'jogador selecionado'
+                                                : 'jogadores selecionados'
+                                        }}
+                                    </span>
+                                </div>
+                                <p
+                                    v-if="chipsRemainder"
+                                    class="mt-1 text-xs text-amber-600 dark:text-amber-400"
+                                >
+                                    Sobrará
+                                    {{ chipsRemainder }}
                                     {{
-                                        selectedPlayersCount === 1
-                                            ? 'selecionado'
-                                            : 'selecionados'
+                                        chipsRemainder === 1
+                                            ? 'ficha'
+                                            : 'fichas'
                                     }}
-                                </span>
+                                </p>
+                                <InputError
+                                    :message="
+                                        createForm.errors.chips_per_player
+                                    "
+                                />
                             </div>
-                            <p
-                                v-if="chipsRemainder"
-                                class="mt-1 text-xs text-amber-600 dark:text-amber-400"
-                            >
-                                {{ chipsRemainder }}
-                                {{
-                                    chipsRemainder === 1
-                                        ? 'ficha vai'
-                                        : 'fichas vão'
-                                }}
-                                sobrar sem dono.
-                            </p>
-                            <InputError
-                                :message="createForm.errors.chips_per_player"
-                            />
                         </div>
                     </div>
 
