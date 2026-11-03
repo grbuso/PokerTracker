@@ -743,7 +743,7 @@ const visitRound = (roundId: number) => {
                                 type="number"
                                 inputmode="numeric"
                                 min="1"
-                                class="h-9 rounded-md border border-input bg-transparent px-3 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                                class="h-11 rounded-lg border border-input bg-transparent px-3 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
                             />
                             <InputError
                                 :message="createForm.errors.total_chips"
@@ -777,7 +777,7 @@ const visitRound = (roundId: number) => {
                                 </div>
                                 <p
                                     v-if="chipsRemainder"
-                                    class="mt-1 text-xs text-amber-600 dark:text-amber-400"
+                                    class="mt-0.5 text-xs text-destructive"
                                 >
                                     Sobrará
                                     {{ chipsRemainder }}

@@ -50,6 +50,10 @@
     --color-chart-3: var(--chart-3);
     --color-chart-4: var(--chart-4);
     --color-chart-5: var(--chart-5);
+    --color-chart-6: var(--chart-6);
+    --color-chart-7: var(--chart-7);
+    --color-chart-8: var(--chart-8);
+    --color-chart-9: var(--chart-9);
 
     --color-sidebar: var(--sidebar-background);
     --color-sidebar-foreground: var(--sidebar-foreground);
@@ -114,6 +118,10 @@
     --chart-3: hsl(197 37% 24%);
     --chart-4: hsl(43 74% 66%);
     --chart-5: hsl(27 87% 67%);
+    --chart-6: hsl(262 60% 55%);
+    --chart-7: hsl(330 70% 55%);
+    --chart-8: hsl(95 50% 45%);
+    --chart-9: hsl(210 70% 50%);
     --radius: 0.5rem;
     --sidebar-background: hsl(0 0% 98%);
     --sidebar-foreground: hsl(240 5.3% 26.1%);
@@ -151,6 +159,10 @@
     --chart-3: hsl(30 80% 55%);
     --chart-4: hsl(280 65% 60%);
     --chart-5: hsl(340 75% 55%);
+    --chart-6: hsl(50 85% 55%);
+    --chart-7: hsl(190 75% 55%);
+    --chart-8: hsl(0 70% 60%);
+    --chart-9: hsl(110 55% 55%);
     --sidebar-background: hsl(0 0% 7%);
     --sidebar-foreground: hsl(0 0% 95.9%);
     --sidebar-primary: hsl(355 72% 50%);
