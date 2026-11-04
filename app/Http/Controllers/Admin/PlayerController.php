@@ -8,6 +8,7 @@ use App\Http\Requests\Admin\UpdatePlayerRequest;
 use App\Models\User;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -21,12 +22,13 @@ class PlayerController extends Controller
         $players = User::query()
             ->withCount('rounds')
             ->orderBy('name')
-            ->get(['id', 'name', 'email', 'is_admin'])
+            ->get(['id', 'name', 'email', 'is_admin', 'avatar_path'])
             ->map(fn (User $user): array => [
                 'id' => $user->id,
                 'name' => $user->name,
                 'email' => $user->email,
                 'is_admin' => $user->is_admin,
+                'avatar' => $user->avatar,
                 'rounds_count' => $user->rounds_count,
                 'is_current_user' => $user->is($request->user()),
             ]);
@@ -41,7 +43,13 @@ class PlayerController extends Controller
      */
     public function store(StorePlayerRequest $request): RedirectResponse
     {
-        $player = User::create($request->safe()->only(['name', 'email', 'password']));
+        $data = $request->safe()->only(['name', 'email', 'password']);
+
+        if ($request->hasFile('avatar')) {
+            $data['avatar_path'] = $request->file('avatar')->store('avatars', 'public');
+        }
+
+        $player = User::create($data);
 
         $player->forceFill([
             'email_verified_at' => now(),
@@ -66,7 +74,17 @@ class PlayerController extends Controller
             $data['password'] = $request->string('password')->toString();
         }
 
+        $oldAvatarPath = $player->avatar_path;
+
+        if ($request->hasFile('avatar')) {
+            $data['avatar_path'] = $request->file('avatar')->store('avatars', 'public');
+        }
+
         $player->update($data);
+
+        if ($oldAvatarPath !== null && $oldAvatarPath !== $player->avatar_path) {
+            Storage::disk('public')->delete($oldAvatarPath);
+        }
 
         Inertia::flash('toast', [
             'type' => 'success',
@@ -92,6 +110,10 @@ class PlayerController extends Controller
             ]);
 
             return back();
+        }
+
+        if ($player->avatar_path !== null) {
+            Storage::disk('public')->delete($player->avatar_path);
         }
 
         $player->delete();

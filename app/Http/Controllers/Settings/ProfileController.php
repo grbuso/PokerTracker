@@ -9,6 +9,7 @@ use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -33,13 +34,25 @@ class ProfileController extends Controller
      */
     public function update(ProfileUpdateRequest $request): RedirectResponse
     {
-        $request->user()->fill($request->validated());
+        $user = $request->user();
 
-        if ($request->user()->isDirty('email')) {
-            $request->user()->email_verified_at = null;
+        $user->fill($request->safe()->except('avatar'));
+
+        if ($user->isDirty('email')) {
+            $user->email_verified_at = null;
         }
 
-        $request->user()->save();
+        $oldAvatarPath = $user->avatar_path;
+
+        if ($request->hasFile('avatar')) {
+            $user->avatar_path = $request->file('avatar')->store('avatars', 'public');
+        }
+
+        $user->save();
+
+        if ($oldAvatarPath !== null && $oldAvatarPath !== $user->avatar_path) {
+            Storage::disk('public')->delete($oldAvatarPath);
+        }
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Profile updated.')]);
 
@@ -56,6 +69,10 @@ class ProfileController extends Controller
         abort_if($user->is_admin || $user->rounds()->exists(), 403);
 
         Auth::logout();
+
+        if ($user->avatar_path !== null) {
+            Storage::disk('public')->delete($user->avatar_path);
+        }
 
         $user->delete();
 

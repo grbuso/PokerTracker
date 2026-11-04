@@ -6,10 +6,12 @@ use Carbon\CarbonImmutable;
 use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Illuminate\Support\Facades\Storage;
 
 /**
  * @property int $id
@@ -18,6 +20,8 @@ use Illuminate\Notifications\Notifiable;
  * @property CarbonImmutable|null $email_verified_at
  * @property string $password
  * @property bool $is_admin
+ * @property string|null $avatar_path
+ * @property-read string|null $avatar
  * @property string|null $two_factor_secret
  * @property string|null $two_factor_recovery_codes
  * @property CarbonImmutable|null $two_factor_confirmed_at
@@ -27,12 +31,19 @@ use Illuminate\Notifications\Notifiable;
  * @property-read RoundUser $pivot
  * @property-read int $rounds_count
  */
-#[Fillable(['name', 'email', 'password'])]
-#[Hidden(['password', 'two_factor_secret', 'two_factor_recovery_codes', 'remember_token'])]
+#[Fillable(['name', 'email', 'password', 'avatar_path'])]
+#[Hidden(['password', 'avatar_path', 'two_factor_secret', 'two_factor_recovery_codes', 'remember_token'])]
 class User extends Authenticatable
 {
     /** @use HasFactory<UserFactory> */
     use HasFactory, Notifiable;
+
+    /**
+     * Get the attributes that should be appended when the model is serialized.
+     *
+     * @var list<string>
+     */
+    protected $appends = ['avatar'];
 
     /**
      * Get the attributes that should be cast.
@@ -46,6 +57,16 @@ class User extends Authenticatable
             'is_admin' => 'boolean',
             'password' => 'hashed',
         ];
+    }
+
+    /**
+     * Get the public URL of the user's avatar.
+     */
+    protected function avatar(): Attribute
+    {
+        return Attribute::get(fn (): ?string => $this->avatar_path
+            ? Storage::disk('public')->url($this->avatar_path)
+            : null);
     }
 
     /**

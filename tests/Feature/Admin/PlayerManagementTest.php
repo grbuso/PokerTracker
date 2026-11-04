@@ -2,8 +2,10 @@
 
 use App\Models\Round;
 use App\Models\User;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Storage;
 use Inertia\Testing\AssertableInertia as Assert;
 
 test('only administrators can manage the game', function () {
@@ -57,6 +59,28 @@ test('administrators can create a player', function () {
         ->and($player->is_admin)->toBeFalse()
         ->and($player->email_verified_at)->not->toBeNull()
         ->and(Hash::check('password', $player->password))->toBeTrue();
+});
+
+test('administrators can create a player with a profile photo', function () {
+    Storage::fake('public');
+
+    $admin = User::factory()->admin()->create();
+
+    $this->actingAs($admin)
+        ->post(route('admin.players.store'), [
+            'name' => 'Novo Jogador',
+            'email' => 'novo@example.com',
+            'password' => 'password',
+            'password_confirmation' => 'password',
+            'avatar' => UploadedFile::fake()->image('avatar.jpg'),
+        ])
+        ->assertRedirect(route('admin.players.index'));
+
+    $player = User::query()->where('email', 'novo@example.com')->firstOrFail();
+
+    expect($player->avatar_path)->not->toBeNull();
+
+    Storage::disk('public')->assertExists($player->avatar_path);
 });
 
 test('players cannot create other players', function () {
@@ -121,6 +145,31 @@ test('administrators can change a player password', function () {
     expect(Hash::check('new-password', $player->fresh()->password))->toBeTrue();
 });
 
+test('administrators can replace a player profile photo', function () {
+    Storage::fake('public');
+
+    $admin = User::factory()->admin()->create();
+
+    $oldPath = UploadedFile::fake()->image('old.jpg')->store('avatars', 'public');
+
+    $player = User::factory()->create(['avatar_path' => $oldPath]);
+
+    $this->actingAs($admin)
+        ->put(route('admin.players.update', $player), [
+            'name' => $player->name,
+            'email' => $player->email,
+            'avatar' => UploadedFile::fake()->image('new.jpg'),
+        ])
+        ->assertRedirect(route('admin.players.index'));
+
+    $player->refresh();
+
+    expect($player->avatar_path)->not->toBe($oldPath);
+
+    Storage::disk('public')->assertMissing($oldPath);
+    Storage::disk('public')->assertExists($player->avatar_path);
+});
+
 test('players cannot update other players', function () {
     $player = User::factory()->create();
     $otherPlayer = User::factory()->create(['name' => 'Ana']);
@@ -144,6 +193,22 @@ test('administrators can delete a player without round history', function () {
         ->assertRedirect(route('admin.players.index'));
 
     expect(User::query()->whereKey($player->id)->exists())->toBeFalse();
+});
+
+test('deleting a player removes their profile photo', function () {
+    Storage::fake('public');
+
+    $admin = User::factory()->admin()->create();
+
+    $path = UploadedFile::fake()->image('avatar.jpg')->store('avatars', 'public');
+
+    $player = User::factory()->create(['avatar_path' => $path]);
+
+    $this->actingAs($admin)
+        ->delete(route('admin.players.destroy', $player))
+        ->assertRedirect(route('admin.players.index'));
+
+    Storage::disk('public')->assertMissing($path);
 });
 
 test('administrators cannot delete a player with round history', function () {

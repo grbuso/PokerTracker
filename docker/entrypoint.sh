@@ -21,6 +21,7 @@ fi
 
 chown -R www-data:www-data storage bootstrap/cache database/data
 
+php artisan storage:link --force
 php artisan package:discover --ansi
 php artisan migrate --force
 php artisan config:cache

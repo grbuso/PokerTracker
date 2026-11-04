@@ -5,6 +5,7 @@ import { ref } from 'vue';
 import PlayerController from '@/actions/App/Http/Controllers/Admin/PlayerController';
 import Heading from '@/components/Heading.vue';
 import InputError from '@/components/InputError.vue';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -25,17 +26,21 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { useInitials } from '@/composables/useInitials';
 
 type Player = {
     id: number;
     name: string;
     email: string;
+    avatar: string | null;
     is_admin: boolean;
     rounds_count: number;
     is_current_user: boolean;
 };
 
 defineProps<{ players: Player[] }>();
+
+const { getInitials } = useInitials();
 
 defineOptions({
     layout: {
@@ -53,12 +58,29 @@ const createForm = useForm({
     email: '',
     password: '',
     password_confirmation: '',
+    avatar: null as File | null,
 });
+
+const createAvatarInput = ref<HTMLInputElement | null>(null);
+
+const onCreateAvatarChange = (event: Event) => {
+    const input = event.target as HTMLInputElement;
+
+    createAvatarInput.value = input;
+    createForm.avatar = input.files?.[0] ?? null;
+};
 
 const submitCreate = () => {
     createForm.post(PlayerController.store.url(), {
         preserveScroll: true,
-        onSuccess: () => createForm.reset(),
+        forceFormData: true,
+        onSuccess: () => {
+            createForm.reset();
+
+            if (createAvatarInput.value) {
+                createAvatarInput.value.value = '';
+            }
+        },
     });
 };
 
@@ -70,7 +92,17 @@ const editForm = useForm({
     email: '',
     password: '',
     password_confirmation: '',
+    avatar: null as File | null,
 });
+
+const editAvatarInput = ref<HTMLInputElement | null>(null);
+
+const onEditAvatarChange = (event: Event) => {
+    const input = event.target as HTMLInputElement;
+
+    editAvatarInput.value = input;
+    editForm.avatar = input.files?.[0] ?? null;
+};
 
 const openEdit = (player: Player) => {
     editing.value = player;
@@ -78,8 +110,13 @@ const openEdit = (player: Player) => {
     editForm.email = player.email;
     editForm.password = '';
     editForm.password_confirmation = '';
+    editForm.avatar = null;
     editForm.clearErrors();
     editOpen.value = true;
+
+    if (editAvatarInput.value) {
+        editAvatarInput.value.value = '';
+    }
 };
 
 const submitEdit = () => {
@@ -89,10 +126,15 @@ const submitEdit = () => {
 
     editForm.put(PlayerController.update.url(editing.value.id), {
         preserveScroll: true,
+        forceFormData: true,
         onSuccess: () => {
             editOpen.value = false;
             editing.value = null;
             editForm.reset();
+
+            if (editAvatarInput.value) {
+                editAvatarInput.value.value = '';
+            }
         },
     });
 };
@@ -192,6 +234,20 @@ const deleteBlockedReason = (player: Player): string | null => {
                                         <span
                                             class="inline-flex items-center gap-2"
                                         >
+                                            <Avatar
+                                                class="size-8 overflow-hidden rounded-full"
+                                            >
+                                                <AvatarImage
+                                                    v-if="player.avatar"
+                                                    :src="player.avatar"
+                                                    :alt="player.name"
+                                                />
+                                                <AvatarFallback>
+                                                    {{
+                                                        getInitials(player.name)
+                                                    }}
+                                                </AvatarFallback>
+                                            </Avatar>
                                             {{ player.name }}
                                             <Badge
                                                 v-if="player.is_admin"
@@ -318,6 +374,17 @@ const deleteBlockedReason = (player: Player): string | null => {
                             />
                         </div>
 
+                        <div class="grid gap-2">
+                            <Label for="avatar">Foto de perfil</Label>
+                            <Input
+                                id="avatar"
+                                type="file"
+                                accept="image/jpeg,image/png,image/webp"
+                                @change="onCreateAvatarChange"
+                            />
+                            <InputError :message="createForm.errors.avatar" />
+                        </div>
+
                         <div class="flex justify-end">
                             <Button
                                 type="submit"
@@ -363,6 +430,21 @@ const deleteBlockedReason = (player: Player): string | null => {
                             autocomplete="off"
                         />
                         <InputError :message="editForm.errors.email" />
+                    </div>
+
+                    <div class="grid gap-2">
+                        <Label for="edit-avatar">Foto de perfil</Label>
+                        <Input
+                            id="edit-avatar"
+                            type="file"
+                            accept="image/jpeg,image/png,image/webp"
+                            @change="onEditAvatarChange"
+                        />
+                        <InputError :message="editForm.errors.avatar" />
+                        <p class="text-xs text-muted-foreground">
+                            JPG, PNG ou WebP, até 2 MB. Deixe em branco para
+                            manter a atual.
+                        </p>
                     </div>
 
                     <div class="grid gap-2">
