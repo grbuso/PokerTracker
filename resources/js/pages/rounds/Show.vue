@@ -114,10 +114,33 @@ const maskDate = (value: string): string => {
     return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`;
 };
 
+const chipDenominations = [100, 50, 25, 10, 5] as const;
+
+const emptyChipCounts = (): Record<number, number> =>
+    chipDenominations.reduce<Record<number, number>>((counts, value) => {
+        counts[value] = 0;
+
+        return counts;
+    }, {});
+
+const chipCountsFromTotal = (total: number): Record<number, number> => {
+    let remaining = Math.max(0, Math.floor(total));
+    const counts = emptyChipCounts();
+
+    for (const value of chipDenominations) {
+        counts[value] = Math.floor(remaining / value);
+        remaining -= counts[value] * value;
+    }
+
+    return counts;
+};
+
 const form = useForm({
     recorded_on: new Date().toLocaleDateString('sv-SE'),
     chips: {} as Record<number, number>,
 });
+
+const chipCounts = ref<Record<number, Record<number, number>>>({});
 
 const recordedOnDisplay = ref(isoToDisplay(form.recorded_on));
 
@@ -153,8 +176,17 @@ const onDatePicked = (event: Event) => {
     recordedOnDisplay.value = isoToDisplay(target.value);
 };
 
+const chipCountsTotal = (counts?: Record<number, number>): number =>
+    chipDenominations.reduce(
+        (total, value) => total + (counts?.[value] ?? 0) * value,
+        0,
+    );
+
+const playerChipTotal = (userId: number): number =>
+    chipCountsTotal(chipCounts.value[userId]);
+
 const eliminate = (player: Player) => {
-    form.chips[player.id] = 0;
+    chipCounts.value[player.id] = emptyChipCounts();
 };
 
 const activePlayersKey = computed(() =>
@@ -166,21 +198,40 @@ const activePlayersKey = computed(() =>
 watch(
     activePlayersKey,
     () => {
+        chipCounts.value = activePlayers.value.reduce<
+            Record<number, Record<number, number>>
+        >((counts, player) => {
+            const existing = chipCounts.value[player.id];
+
+            counts[player.id] =
+                existing && chipCountsTotal(existing) === player.pivot.chips
+                    ? existing
+                    : chipCountsFromTotal(player.pivot.chips);
+
+            return counts;
+        }, {});
+    },
+    { immediate: true },
+);
+
+watch(
+    chipCounts,
+    () => {
         form.chips = activePlayers.value.reduce<Record<number, number>>(
             (chips, player) => {
-                chips[player.id] = player.pivot.chips;
+                chips[player.id] = playerChipTotal(player.id);
 
                 return chips;
             },
             {},
         );
     },
-    { immediate: true },
+    { immediate: true, deep: true },
 );
 
 const sum = computed(() =>
     activePlayers.value.reduce(
-        (total, player) => total + Number(form.chips[player.id] ?? 0),
+        (total, player) => total + playerChipTotal(player.id),
         0,
     ),
 );
@@ -518,7 +569,8 @@ const submit = () => {
                     <CardDescription
                         v-if="isActive && activePlayers.length && canManage"
                     >
-                        Atualize as fichas de quem continua na mesa.
+                        Informe a quantidade de cada ficha de quem continua na
+                        mesa.
                     </CardDescription>
                     <CardDescription
                         v-else-if="isActive && activePlayers.length === 0"
@@ -583,9 +635,19 @@ const submit = () => {
                                             Jogador
                                         </th>
                                         <th
-                                            class="px-3 py-2.5 text-center font-medium"
+                                            v-for="value in chipDenominations"
+                                            :key="value"
+                                            class="px-1 py-2.5 text-center font-medium"
                                         >
-                                            Fichas
+                                            {{ value }}
+                                        </th>
+                                        <th
+                                            class="px-2 py-2.5 text-center font-medium"
+                                        >
+                                            Total
+                                        </th>
+                                        <th class="px-2 py-2.5">
+                                            <span class="sr-only">Ações</span>
                                         </th>
                                     </tr>
                                 </thead>
@@ -634,33 +696,47 @@ const submit = () => {
                                                 </span>
                                             </span>
                                         </td>
-                                        <td class="px-3 py-2.5 text-center">
-                                            <div
-                                                v-if="
-                                                    !player.pivot.eliminated_at
-                                                "
-                                                class="grid grid-cols-[1fr_auto_1fr] items-center"
+                                        <template
+                                            v-if="!player.pivot.eliminated_at"
+                                        >
+                                            <td
+                                                v-for="value in chipDenominations"
+                                                :key="value"
+                                                class="px-1 py-2.5 text-center"
                                             >
-                                                <span aria-hidden="true" />
                                                 <input
                                                     v-model.number="
-                                                        form.chips[player.id]
+                                                        chipCounts[player.id][
+                                                            value
+                                                        ]
                                                     "
                                                     type="number"
                                                     inputmode="numeric"
                                                     min="0"
-                                                    class="h-8 w-24 rounded-md border border-input bg-transparent px-2 text-center text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                                                    :aria-label="`Fichas de ${value} de ${player.name}`"
+                                                    class="h-8 w-12 rounded-md border border-input bg-transparent px-1 text-center text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
                                                 />
+                                            </td>
+                                            <td
+                                                class="px-2 py-2.5 text-center font-medium tabular-nums"
+                                            >
+                                                {{
+                                                    formatChips(
+                                                        playerChipTotal(
+                                                            player.id,
+                                                        ),
+                                                    )
+                                                }}
+                                            </td>
+                                            <td class="px-2 py-2.5 text-center">
                                                 <Button
                                                     type="button"
                                                     variant="ghost"
                                                     size="icon-sm"
-                                                    class="ml-2 size-7 justify-self-start text-muted-foreground hover:bg-muted hover:text-foreground"
+                                                    class="size-7 text-muted-foreground hover:bg-muted hover:text-foreground"
                                                     :disabled="
-                                                        Number(
-                                                            form.chips[
-                                                                player.id
-                                                            ] ?? 0,
+                                                        playerChipTotal(
+                                                            player.id,
                                                         ) === 0
                                                     "
                                                     :aria-label="`Eliminar ${player.name} e zerar as fichas`"
@@ -669,9 +745,16 @@ const submit = () => {
                                                 >
                                                     <UserX class="size-3.5" />
                                                 </Button>
-                                            </div>
+                                            </td>
+                                        </template>
+                                        <td
+                                            v-else
+                                            :colspan="
+                                                chipDenominations.length + 2
+                                            "
+                                            class="px-2 py-2.5 text-center"
+                                        >
                                             <Badge
-                                                v-else
                                                 variant="outline"
                                                 :class="playerStatusClass(true)"
                                             >
