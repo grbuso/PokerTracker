@@ -21,7 +21,7 @@ class DashboardController extends Controller
             ->get();
 
         $activeRound = $rounds->firstWhere('status', 'ativa');
-        $users = User::query()->orderBy('name')->get(['id', 'name']);
+        $users = User::query()->orderBy('name')->get(['id', 'name', 'avatar_path']);
         $lastSnapshotOn = ChipSnapshot::query()->max('recorded_on');
 
         return Inertia::render('Dashboard', [
@@ -41,6 +41,7 @@ class DashboardController extends Controller
                 'status' => $round->status,
                 'players_count' => $round->players->count(),
                 'winner' => $this->winnerFor($round)?->name,
+                'winner_avatar' => $this->winnerFor($round)?->avatar,
                 'tie' => $this->isTie($round),
             ])->values(),
             'ranking' => $this->ranking($rounds),
@@ -68,6 +69,7 @@ class DashboardController extends Controller
             'active_players_count' => $activePlayers->count(),
             'leader' => $leaders->isEmpty() ? null : [
                 'name' => $leaders->count() === 1 ? $leaders->first()->name : 'Empate',
+                'avatar' => $leaders->count() === 1 ? $leaders->first()->avatar : null,
                 'chips' => (int) $leaderChips,
                 'tied' => $leaders->count() > 1,
                 'count' => $leaders->count(),
@@ -130,6 +132,7 @@ class DashboardController extends Controller
                 return [
                     'id' => $user->id,
                     'name' => $user->name,
+                    'avatar' => $user->avatar,
                     'wins' => $winsCount,
                     'rounds_played' => $roundsPlayed,
                     'win_rate' => $roundsPlayed > 0

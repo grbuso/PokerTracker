@@ -17,6 +17,7 @@ import { computed, ref, watch } from 'vue';
 import PlayerController from '@/actions/App/Http/Controllers/Admin/PlayerController';
 import RoundController from '@/actions/App/Http/Controllers/RoundController';
 import InputError from '@/components/InputError.vue';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -36,6 +37,7 @@ import {
     DialogTitle,
 } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
+import { getInitials } from '@/composables/useInitials';
 import { dashboard } from '@/routes';
 
 type ActiveRound = {
@@ -46,6 +48,7 @@ type ActiveRound = {
     active_players_count: number;
     leader: {
         name: string;
+        avatar: string | null;
         chips: number;
         tied: boolean;
         count: number;
@@ -67,12 +70,14 @@ type RoundSummary = {
     status: string;
     players_count: number;
     winner: string | null;
+    winner_avatar: string | null;
     tie: boolean;
 };
 
 type RankingEntry = {
     id: number;
     name: string;
+    avatar: string | null;
     wins: number;
     rounds_played: number;
     win_rate: number | null;
@@ -81,7 +86,7 @@ type RankingEntry = {
 
 const props = defineProps<{
     canManage: boolean;
-    users: { id: number; name: string }[];
+    users: { id: number; name: string; avatar: string | null }[];
     stats: Stats;
     activeRound: ActiveRound | null;
     rounds: RoundSummary[];
@@ -421,9 +426,24 @@ const visitRound = (roundId: number) => {
                                 Líder da rodada
                             </p>
                         </div>
-                        <p class="mt-1 truncate text-lg font-semibold">
-                            {{ activeRound?.leader?.name ?? '—' }}
-                        </p>
+                        <div class="mt-1 flex items-center gap-2">
+                            <Avatar
+                                v-if="activeRound?.leader"
+                                class="size-7 overflow-hidden rounded-full"
+                            >
+                                <AvatarImage
+                                    v-if="activeRound.leader.avatar"
+                                    :src="activeRound.leader.avatar"
+                                    :alt="activeRound.leader.name"
+                                />
+                                <AvatarFallback class="text-[10px]">
+                                    {{ getInitials(activeRound.leader.name) }}
+                                </AvatarFallback>
+                            </Avatar>
+                            <p class="truncate text-lg font-semibold">
+                                {{ activeRound?.leader?.name ?? '—' }}
+                            </p>
+                        </div>
                         <p
                             v-if="activeRound?.leader"
                             class="truncate text-[11px] text-muted-foreground"
@@ -523,11 +543,27 @@ const visitRound = (roundId: number) => {
                                         <span
                                             class="inline-flex items-center gap-1.5 font-medium"
                                         >
+                                            <Avatar
+                                                class="size-6 overflow-hidden rounded-full"
+                                            >
+                                                <AvatarImage
+                                                    v-if="entry.avatar"
+                                                    :src="entry.avatar"
+                                                    :alt="entry.name"
+                                                />
+                                                <AvatarFallback
+                                                    class="text-[10px]"
+                                                >
+                                                    {{
+                                                        getInitials(entry.name)
+                                                    }}
+                                                </AvatarFallback>
+                                            </Avatar>
+                                            {{ entry.name }}
                                             <Trophy
                                                 v-if="isLeader(entry)"
                                                 class="size-3.5 text-primary"
                                             />
-                                            {{ entry.name }}
                                         </span>
                                     </td>
                                     <td class="px-3 py-2.5 text-center">
@@ -644,12 +680,34 @@ const visitRound = (roundId: number) => {
                                                 v-if="round.winner"
                                                 class="inline-flex items-center gap-1.5"
                                             >
-                                                <Trophy
-                                                    class="size-3.5 text-primary"
-                                                />
+                                                <Avatar
+                                                    class="size-6 overflow-hidden rounded-full"
+                                                >
+                                                    <AvatarImage
+                                                        v-if="
+                                                            round.winner_avatar
+                                                        "
+                                                        :src="
+                                                            round.winner_avatar
+                                                        "
+                                                        :alt="round.winner"
+                                                    />
+                                                    <AvatarFallback
+                                                        class="text-[10px]"
+                                                    >
+                                                        {{
+                                                            getInitials(
+                                                                round.winner,
+                                                            )
+                                                        }}
+                                                    </AvatarFallback>
+                                                </Avatar>
                                                 <span class="max-w-36 truncate">
                                                     {{ round.winner }}
                                                 </span>
+                                                <Trophy
+                                                    class="size-3.5 text-primary"
+                                                />
                                             </span>
                                             <span
                                                 v-else-if="round.tie"
@@ -758,9 +816,7 @@ const visitRound = (roundId: number) => {
                                 <div
                                     class="flex flex-wrap items-center justify-between gap-2"
                                 >
-                                    <span
-                                        v-if="selectedPlayersCount >= 2"
-                                    >
+                                    <span v-if="selectedPlayersCount >= 2">
                                         {{ chipsPerPlayer }}
                                     </span>
                                     <span v-else class="text-muted-foreground">
@@ -812,6 +868,18 @@ const visitRound = (roundId: number) => {
                                     type="checkbox"
                                     class="size-4 rounded border-input accent-primary"
                                 />
+                                <Avatar
+                                    class="size-6 overflow-hidden rounded-full"
+                                >
+                                    <AvatarImage
+                                        v-if="user.avatar"
+                                        :src="user.avatar"
+                                        :alt="user.name"
+                                    />
+                                    <AvatarFallback class="text-[10px]">
+                                        {{ getInitials(user.name) }}
+                                    </AvatarFallback>
+                                </Avatar>
                                 {{ user.name }}
                             </label>
                         </div>

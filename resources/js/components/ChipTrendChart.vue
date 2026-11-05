@@ -1,9 +1,12 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { getInitials } from '@/composables/useInitials';
 
 type ChartPlayer = {
     id: number;
     name: string;
+    avatar: string | null;
 };
 
 type ChartSnapshot = {
@@ -133,6 +136,7 @@ const series = computed(() => {
         return {
             id: player.id,
             name: player.name,
+            avatar: player.avatar,
             color: colors[playerIndex % colors.length],
             points,
             last: points.at(-1)?.chips ?? null,
@@ -354,6 +358,16 @@ const tooltipPosition = computed(() => {
                     :key="`legend-${item.id}`"
                     class="flex items-center gap-1.5 text-xs"
                 >
+                    <Avatar class="size-5 overflow-hidden rounded-full">
+                        <AvatarImage
+                            v-if="item.avatar"
+                            :src="item.avatar"
+                            :alt="item.name"
+                        />
+                        <AvatarFallback class="text-[9px]">
+                            {{ getInitials(item.name) }}
+                        </AvatarFallback>
+                    </Avatar>
                     <span
                         class="size-2 rounded-full"
                         :style="{ backgroundColor: item.color }"

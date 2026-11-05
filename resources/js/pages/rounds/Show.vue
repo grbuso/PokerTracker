@@ -16,6 +16,7 @@ import { computed, ref, watch } from 'vue';
 import RoundController from '@/actions/App/Http/Controllers/RoundController';
 import ChipTrendChart from '@/components/ChipTrendChart.vue';
 import InputError from '@/components/InputError.vue';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -35,11 +36,13 @@ import {
     DialogHeader,
     DialogTitle,
 } from '@/components/ui/dialog';
+import { getInitials } from '@/composables/useInitials';
 import { dashboard } from '@/routes';
 
 type Player = {
     id: number;
     name: string;
+    avatar: string | null;
     pivot: { chips: number; eliminated_at: string | null };
 };
 
@@ -258,6 +261,7 @@ const leader = computed(() => {
 
     return {
         name: leaders.length > 1 ? 'Empate' : leaders[0].name,
+        avatar: leaders.length > 1 ? null : leaders[0].avatar,
         chips: topChips,
         tied: leaders.length > 1,
         count: leaders.length,
@@ -386,17 +390,32 @@ const submit = () => {
                                 Líder da rodada
                             </p>
                         </div>
-                        <h2
-                            class="text-3xl font-semibold tracking-tight md:text-4xl"
-                        >
-                            {{
-                                leader
-                                    ? leader.tied
-                                        ? 'Empate'
-                                        : leader.name
-                                    : 'Mesa vazia'
-                            }}
-                        </h2>
+                        <div class="flex items-center gap-3">
+                            <Avatar
+                                v-if="leader"
+                                class="size-10 overflow-hidden rounded-full"
+                            >
+                                <AvatarImage
+                                    v-if="leader.avatar"
+                                    :src="leader.avatar"
+                                    :alt="leader.name"
+                                />
+                                <AvatarFallback class="text-xs">
+                                    {{ getInitials(leader.name) }}
+                                </AvatarFallback>
+                            </Avatar>
+                            <h2
+                                class="text-3xl font-semibold tracking-tight md:text-4xl"
+                            >
+                                {{
+                                    leader
+                                        ? leader.tied
+                                            ? 'Empate'
+                                            : leader.name
+                                        : 'Mesa vazia'
+                                }}
+                            </h2>
+                        </div>
                         <p class="text-sm text-muted-foreground">
                             <template v-if="leader">
                                 {{ formatChips(leader.chips) }} fichas
@@ -583,13 +602,36 @@ const submit = () => {
                                     >
                                         <td class="px-3 py-2.5">
                                             <span
-                                                :class="
-                                                    player.pivot.eliminated_at
-                                                        ? 'line-through'
-                                                        : ''
-                                                "
+                                                class="inline-flex items-center gap-2"
                                             >
-                                                {{ player.name }}
+                                                <Avatar
+                                                    class="size-6 overflow-hidden rounded-full"
+                                                >
+                                                    <AvatarImage
+                                                        v-if="player.avatar"
+                                                        :src="player.avatar"
+                                                        :alt="player.name"
+                                                    />
+                                                    <AvatarFallback
+                                                        class="text-[10px]"
+                                                    >
+                                                        {{
+                                                            getInitials(
+                                                                player.name,
+                                                            )
+                                                        }}
+                                                    </AvatarFallback>
+                                                </Avatar>
+                                                <span
+                                                    :class="
+                                                        player.pivot
+                                                            .eliminated_at
+                                                            ? 'line-through'
+                                                            : ''
+                                                    "
+                                                >
+                                                    {{ player.name }}
+                                                </span>
                                             </span>
                                         </td>
                                         <td class="px-3 py-2.5 text-center">
@@ -770,13 +812,36 @@ const submit = () => {
                                     >
                                         <td class="px-3 py-2.5">
                                             <span
-                                                :class="
-                                                    player.pivot.eliminated_at
-                                                        ? 'line-through'
-                                                        : ''
-                                                "
+                                                class="inline-flex items-center gap-2"
                                             >
-                                                {{ player.name }}
+                                                <Avatar
+                                                    class="size-6 overflow-hidden rounded-full"
+                                                >
+                                                    <AvatarImage
+                                                        v-if="player.avatar"
+                                                        :src="player.avatar"
+                                                        :alt="player.name"
+                                                    />
+                                                    <AvatarFallback
+                                                        class="text-[10px]"
+                                                    >
+                                                        {{
+                                                            getInitials(
+                                                                player.name,
+                                                            )
+                                                        }}
+                                                    </AvatarFallback>
+                                                </Avatar>
+                                                <span
+                                                    :class="
+                                                        player.pivot
+                                                            .eliminated_at
+                                                            ? 'line-through'
+                                                            : ''
+                                                    "
+                                                >
+                                                    {{ player.name }}
+                                                </span>
                                             </span>
                                         </td>
                                         <td

@@ -31,6 +31,7 @@ const user = computed(() => page.props.auth.user);
 const { getInitials } = useInitials();
 
 const preview = ref<string | null>(null);
+const avatarFileName = ref<string | null>(null);
 
 const onAvatarChange = (event: Event) => {
     const file = (event.target as HTMLInputElement).files?.[0] ?? null;
@@ -40,6 +41,7 @@ const onAvatarChange = (event: Event) => {
     }
 
     preview.value = file ? URL.createObjectURL(file) : null;
+    avatarFileName.value = file?.name ?? null;
 };
 
 onBeforeUnmount(() => {
@@ -80,13 +82,34 @@ onBeforeUnmount(() => {
 
                 <div class="grid gap-2">
                     <Label for="avatar">Foto de perfil</Label>
-                    <Input
-                        id="avatar"
-                        name="avatar"
-                        type="file"
-                        accept="image/jpeg,image/png,image/webp"
-                        @change="onAvatarChange"
-                    />
+                    <label
+                        for="avatar"
+                        class="flex cursor-pointer items-center gap-3 rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs transition-colors focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/50 hover:bg-muted/50"
+                    >
+                        <span
+                            class="inline-flex h-7 shrink-0 items-center rounded-md bg-secondary px-3 text-sm font-medium text-secondary-foreground"
+                        >
+                            Escolher imagem
+                        </span>
+                        <span
+                            class="truncate"
+                            :class="
+                                avatarFileName
+                                    ? 'text-foreground'
+                                    : 'text-muted-foreground'
+                            "
+                        >
+                            {{ avatarFileName ?? 'Nenhum arquivo selecionado' }}
+                        </span>
+                        <input
+                            id="avatar"
+                            name="avatar"
+                            type="file"
+                            accept="image/jpeg,image/png,image/webp"
+                            class="sr-only"
+                            @change="onAvatarChange"
+                        />
+                    </label>
                     <InputError :message="errors.avatar" />
                     <p class="text-xs text-muted-foreground">
                         JPG, PNG ou WebP, até 2 MB.

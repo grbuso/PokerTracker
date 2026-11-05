@@ -2,6 +2,7 @@
 
 use App\Models\Round;
 use App\Models\User;
+use Illuminate\Support\Facades\Storage;
 use Inertia\Testing\AssertableInertia as Assert;
 
 test('guests are redirected to the login page', function () {
@@ -49,6 +50,47 @@ test('dashboard shows the active round summary', function () {
             ->where('ranking.0.name', 'Ana')
             ->where('ranking.0.win_rate', null)
             ->where('ranking.0.streak', 0)
+        );
+});
+
+test('dashboard exposes player avatars in leader, ranking, history and player list', function () {
+    Storage::fake('public');
+
+    $admin = User::factory()->create([
+        'name' => 'Zed',
+        'avatar_path' => 'avatars/zed.jpg',
+    ]);
+    $player = User::factory()->create([
+        'name' => 'Ana',
+        'avatar_path' => 'avatars/ana.jpg',
+    ]);
+
+    $activeRound = Round::create([
+        'starts_on' => '2026-10-28',
+        'total_chips' => 1000,
+        'status' => 'ativa',
+    ]);
+    $activeRound->players()->attach($player->id, ['chips' => 400]);
+
+    $finishedRound = Round::create([
+        'starts_on' => '2026-10-27',
+        'total_chips' => 1000,
+        'status' => 'encerrada',
+    ]);
+    $finishedRound->players()->attach($player->id, ['chips' => 500]);
+    $finishedRound->players()->attach($admin->id, ['chips' => 0]);
+
+    $hasAnaAvatar = fn ($value) => is_string($value) && str_contains($value, 'avatars/ana.jpg');
+
+    $this->actingAs($admin);
+
+    $this->get(route('dashboard'))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('activeRound.leader.avatar', $hasAnaAvatar)
+            ->where('ranking.0.avatar', $hasAnaAvatar)
+            ->where('users.0.avatar', $hasAnaAvatar)
+            ->where('rounds.0.winner_avatar', $hasAnaAvatar)
         );
 });
 
