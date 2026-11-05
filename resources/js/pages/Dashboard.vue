@@ -13,7 +13,7 @@ import {
     Trophy,
     Users,
 } from '@lucide/vue';
-import { computed, ref, watch } from 'vue';
+import { computed, ref } from 'vue';
 import PlayerController from '@/actions/App/Http/Controllers/Admin/PlayerController';
 import RoundController from '@/actions/App/Http/Controllers/RoundController';
 import InputError from '@/components/InputError.vue';
@@ -106,39 +106,56 @@ defineOptions({
     },
 });
 
+const chipDenominations = [100, 50, 25, 10, 5] as const;
+
 const createForm = useForm({
-    total_chips: 1000,
+    chips: {
+        100: 0,
+        50: 0,
+        25: 0,
+        10: 0,
+        5: 0,
+    } as Record<number, number>,
+    total_chips: 0,
     chips_per_player: 0,
     user_ids: props.users.map((user) => user.id),
 });
 
 const selectedPlayersCount = computed(() => createForm.user_ids.length);
 
-const chipsPerPlayer = computed(() =>
-    selectedPlayersCount.value > 0
-        ? Math.floor(createForm.total_chips / selectedPlayersCount.value)
-        : 0,
+const totalChipsValue = computed(() =>
+    chipDenominations.reduce(
+        (total, value) => total + (createForm.chips[value] ?? 0) * value,
+        0,
+    ),
 );
 
-const chipsRemainder = computed(() =>
-    selectedPlayersCount.value > 0
-        ? createForm.total_chips % selectedPlayersCount.value
-        : 0,
+const chipSplit = computed(() =>
+    chipDenominations.map((value) => {
+        const count = createForm.chips[value] ?? 0;
+        const players = selectedPlayersCount.value;
+
+        return {
+            value,
+            perPlayer: players > 0 ? Math.floor(count / players) : 0,
+            leftover: players > 0 ? count % players : count,
+        };
+    }),
+);
+
+const chipsPerPlayer = computed(() =>
+    chipSplit.value.reduce(
+        (total, chip) => total + chip.perPlayer * chip.value,
+        0,
+    ),
+);
+
+const leftoverChips = computed(() =>
+    chipSplit.value.filter((chip) => chip.leftover > 0),
 );
 
 const canCreateRound = computed(
-    () =>
-        createForm.total_chips >= 1 &&
-        selectedPlayersCount.value >= 2 &&
-        chipsPerPlayer.value >= 1,
-);
-
-watch(
-    () => [createForm.total_chips, createForm.user_ids.length],
-    () => {
-        createForm.chips_per_player = chipsPerPlayer.value;
-    },
-    { immediate: true },
+    () => selectedPlayersCount.value >= 2 && chipsPerPlayer.value >= 1,
 );
 
 const createOpen = ref(false);
@@ -151,8 +168,9 @@ const openCreateDialog = () => {
 const submitCreate = () => {
     createForm
         .transform((data) => ({
-            ...data,
+            total_chips: chipsPerPlayer.value * selectedPlayersCount.value,
             chips_per_player: chipsPerPlayer.value,
+            user_ids: data.user_ids,
         }))
         .post(RoundController.store.url(), {
             preserveScroll: true,
@@ -788,7 +806,8 @@ const visitRound = (roundId: number) => {
                         automaticamente.
                     </DialogDescription>
                     <DialogDescription v-else>
-                        Defina o total de fichas e os participantes da rodada
+                        Informe as fichas disponíveis e os participantes da
+                        rodada
                     </DialogDescription>
                 </DialogHeader>
 
@@ -796,16 +815,39 @@ const visitRound = (roundId: number) => {
                     <div
                         class="grid gap-4 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)]"
                     >
-                        <div class="grid gap-2">
-                            <Label for="total_chips">Total de fichas</Label>
-                            <input
-                                id="total_chips"
-                                v-model.number="createForm.total_chips"
-                                type="number"
-                                inputmode="numeric"
-                                min="1"
-                                class="h-11 rounded-lg border border-input bg-transparent px-3 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
-                            />
+                        <div class="grid content-start gap-2">
+                            <Label>Fichas disponíveis</Label>
+                            <div class="grid gap-2">
+                                <div
+                                    v-for="value in chipDenominations"
+                                    :key="value"
+                                    class="flex items-center justify-between gap-3"
+                                >
+                                    <Label
+                                        :for="`chips_${value}`"
+                                        class="text-sm font-normal text-muted-foreground"
+                                    >
+                                        Fichas de {{ value }}
+                                    </Label>
+                                    <input
+                                        :id="`chips_${value}`"
+                                        v-model.number="createForm.chips[value]"
+                                        type="number"
+                                        inputmode="numeric"
+                                        min="0"
+                                        class="h-9 w-24 rounded-lg border border-input bg-transparent px-3 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                                    />
+                                </div>
+                            </div>
+                            <p class="text-xs text-muted-foreground">
+                                Total disponível:
+                                <span
+                                    class="font-medium text-foreground tabular-nums"
+                                >
+                                    {{ totalChipsValue }}
+                                </span>
+                                em fichas
+                            </p>
                             <InputError
                                 :message="createForm.errors.total_chips"
                             />
@@ -816,36 +858,73 @@ const visitRound = (roundId: number) => {
                             <div
                                 class="rounded-lg border bg-muted/30 p-3 text-sm"
                             >
-                                <div
-                                    class="flex flex-wrap items-center justify-between gap-2"
-                                >
-                                    <span v-if="selectedPlayersCount >= 2">
-                                        {{ chipsPerPlayer }}
-                                    </span>
-                                    <span v-else class="text-muted-foreground">
-                                        Escolha pelo menos 2 jogadores
-                                    </span>
-                                    <span class="text-muted-foreground">
-                                        {{ selectedPlayersCount }}
-                                        {{
-                                            selectedPlayersCount === 1
-                                                ? 'jogador selecionado'
-                                                : 'jogadores selecionados'
-                                        }}
-                                    </span>
-                                </div>
-                                <p
-                                    v-if="chipsRemainder"
-                                    class="mt-0.5 text-xs text-destructive"
-                                >
-                                    Sobrará
-                                    {{ chipsRemainder }}
-                                    {{
-                                        chipsRemainder === 1
-                                            ? 'ficha'
-                                            : 'fichas'
-                                    }}
+                                <template v-if="selectedPlayersCount >= 2">
+                                    <div
+                                        class="flex items-center justify-between gap-2"
+                                    >
+                                        <span class="font-medium">
+                                            {{ chipsPerPlayer }} em fichas
+                                        </span>
+                                        <span
+                                            class="text-xs text-muted-foreground"
+                                        >
+                                            {{ selectedPlayersCount }}
+                                            jogadores
+                                        </span>
+                                    </div>
+                                    <ul class="mt-2 grid gap-1">
+                                        <li
+                                            v-for="chip in chipSplit"
+                                            :key="chip.value"
+                                            class="flex items-center justify-between text-xs"
+                                        >
+                                            <span class="text-muted-foreground">
+                                                {{ chip.value }}
+                                            </span>
+                                            <span class="tabular-nums">
+                                                {{ chip.perPlayer }}
+                                                {{
+                                                    chip.perPlayer === 1
+                                                        ? 'ficha'
+                                                        : 'fichas'
+                                                }}
+                                            </span>
+                                        </li>
+                                    </ul>
+                                </template>
+                                <p v-else class="text-muted-foreground">
+                                    Escolha pelo menos 2 jogadores
                                 </p>
+
+                                <div
+                                    v-if="
+                                        selectedPlayersCount >= 2 &&
+                                        leftoverChips.length
+                                    "
+                                    class="mt-2 border-t border-border/60 pt-2 text-xs text-destructive"
+                                >
+                                    <p class="font-medium">
+                                        Sobras (fora da rodada)
+                                    </p>
+                                    <ul class="mt-1 grid gap-0.5">
+                                        <li
+                                            v-for="chip in leftoverChips"
+                                            :key="`leftover-${chip.value}`"
+                                            class="flex items-center justify-between"
+                                        >
+                                            <span>{{ chip.value }}</span>
+                                            <span class="tabular-nums">
+                                                {{ chip.leftover }}
+                                                {{
+                                                    chip.leftover === 1
+                                                        ? 'ficha'
+                                                        : 'fichas'
+                                                }}
+                                            </span>
+                                        </li>
+                                    </ul>
+                                </div>
+                                
                                 <InputError
                                     :message="
                                         createForm.errors.chips_per_player
