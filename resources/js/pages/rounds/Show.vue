@@ -185,8 +185,37 @@ const chipCountsTotal = (counts?: Record<number, number>): number =>
 const playerChipTotal = (userId: number): number =>
     chipCountsTotal(chipCounts.value[userId]);
 
+const playerTotal = (userId: number): number =>
+    Number(form.chips[userId] ?? 0) || 0;
+
+const parseChipAmount = (value: string): number => {
+    const parsed = Number(value);
+
+    return Number.isFinite(parsed) ? Math.max(0, Math.trunc(parsed)) : 0;
+};
+
+const onChipCountInput = (
+    userId: number,
+    denomination: number,
+    event: Event,
+): void => {
+    const target = event.target as HTMLInputElement;
+
+    chipCounts.value[userId][denomination] = parseChipAmount(target.value);
+    form.chips[userId] = playerChipTotal(userId);
+};
+
+const onTotalInput = (userId: number, event: Event): void => {
+    const target = event.target as HTMLInputElement;
+    const total = parseChipAmount(target.value);
+
+    form.chips[userId] = total;
+    chipCounts.value[userId] = chipCountsFromTotal(total);
+};
+
 const eliminate = (player: Player) => {
     chipCounts.value[player.id] = emptyChipCounts();
+    form.chips[player.id] = 0;
 };
 
 const activePlayersKey = computed(() =>
@@ -202,36 +231,35 @@ watch(
             Record<number, Record<number, number>>
         >((counts, player) => {
             const existing = chipCounts.value[player.id];
+            const pivotChips = Number(player.pivot.chips);
 
             counts[player.id] =
-                existing && chipCountsTotal(existing) === player.pivot.chips
+                existing && chipCountsTotal(existing) === pivotChips
                     ? existing
-                    : chipCountsFromTotal(player.pivot.chips);
+                    : chipCountsFromTotal(pivotChips);
 
             return counts;
         }, {});
-    },
-    { immediate: true },
-);
 
-watch(
-    chipCounts,
-    () => {
         form.chips = activePlayers.value.reduce<Record<number, number>>(
             (chips, player) => {
-                chips[player.id] = playerChipTotal(player.id);
+                const existing = Number(form.chips[player.id]);
+                const pivotChips = Number(player.pivot.chips);
+
+                chips[player.id] =
+                    existing === pivotChips ? existing : pivotChips;
 
                 return chips;
             },
             {},
         );
     },
-    { immediate: true, deep: true },
+    { immediate: true },
 );
 
 const sum = computed(() =>
     activePlayers.value.reduce(
-        (total, player) => total + playerChipTotal(player.id),
+        (total, player) => total + playerTotal(player.id),
         0,
     ),
 );
@@ -357,6 +385,10 @@ const submit = () => {
     if (!isActive.value) {
         return;
     }
+
+    activePlayers.value.forEach((player) => {
+        form.chips[player.id] = playerTotal(player.id);
+    });
 
     form.post(RoundController.storeSnapshot.url(props.round.id), {
         preserveScroll: true,
@@ -569,8 +601,8 @@ const submit = () => {
                     <CardDescription
                         v-if="isActive && activePlayers.length && canManage"
                     >
-                        Informe a quantidade de cada ficha de quem continua na
-                        mesa.
+                        Informe as denominações ou o total de fichas de quem
+                        continua na mesa.
                     </CardDescription>
                     <CardDescription
                         v-else-if="isActive && activePlayers.length === 0"
@@ -715,18 +747,50 @@ const submit = () => {
                                                     min="0"
                                                     :aria-label="`Fichas de ${value} de ${player.name}`"
                                                     class="h-8 w-12 rounded-md border border-input bg-transparent px-1 text-center text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                                                    @input="
+                                                        onChipCountInput(
+                                                            player.id,
+                                                            value,
+                                                            $event,
+                                                        )
+                                                    "
                                                 />
                                             </td>
-                                            <td
-                                                class="px-2 py-2.5 text-center font-medium tabular-nums"
-                                            >
-                                                {{
-                                                    formatChips(
+                                            <td class="px-2 py-2.5 text-center">
+                                                <input
+                                                    v-model.number="
+                                                        form.chips[player.id]
+                                                    "
+                                                    type="number"
+                                                    inputmode="numeric"
+                                                    min="0"
+                                                    :aria-label="`Total de fichas de ${player.name}`"
+                                                    class="h-8 w-20 rounded-md border border-input bg-transparent px-1 text-center text-sm font-medium shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                                                    @input="
+                                                        onTotalInput(
+                                                            player.id,
+                                                            $event,
+                                                        )
+                                                    "
+                                                />
+                                                <p
+                                                    v-if="
                                                         playerChipTotal(
                                                             player.id,
-                                                        ),
-                                                    )
-                                                }}
+                                                        ) !==
+                                                        playerTotal(player.id)
+                                                    "
+                                                    class="mt-1 text-[10px] text-muted-foreground tabular-nums"
+                                                >
+                                                    Contagem:
+                                                    {{
+                                                        formatChips(
+                                                            playerChipTotal(
+                                                                player.id,
+                                                            ),
+                                                        )
+                                                    }}
+                                                </p>
                                             </td>
                                             <td class="px-2 py-2.5 text-center">
                                                 <Button
@@ -735,7 +799,7 @@ const submit = () => {
                                                     size="icon-sm"
                                                     class="size-7 text-muted-foreground hover:bg-muted hover:text-foreground"
                                                     :disabled="
-                                                        playerChipTotal(
+                                                        playerTotal(
                                                             player.id,
                                                         ) === 0
                                                     "
