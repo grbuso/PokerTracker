@@ -112,7 +112,7 @@ onBeforeUnmount(() => {
                     </label>
                     <InputError :message="errors.avatar" />
                     <p class="text-xs text-muted-foreground">
-                        JPG, PNG ou WebP, até 2 MB.
+                        JPG, PNG ou WebP, até 10 MB.
                     </p>
                 </div>
             </div>
