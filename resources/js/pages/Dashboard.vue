@@ -428,7 +428,10 @@ const visitRound = (roundId: number) => {
                         </div>
                         <div class="mt-1 flex items-center gap-2">
                             <Avatar
-                                v-if="activeRound?.leader"
+                                v-if="
+                                    activeRound?.leader &&
+                                    !activeRound.leader.tied
+                                "
                                 class="size-7 overflow-hidden rounded-full"
                             >
                                 <AvatarImage

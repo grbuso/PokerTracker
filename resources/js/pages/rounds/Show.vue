@@ -392,7 +392,7 @@ const submit = () => {
                         </div>
                         <div class="flex items-center gap-3">
                             <Avatar
-                                v-if="leader"
+                                v-if="leader && !leader.tied"
                                 class="size-10 overflow-hidden rounded-full"
                             >
                                 <AvatarImage
