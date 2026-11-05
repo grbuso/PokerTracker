@@ -150,8 +150,16 @@ const chipsPerPlayer = computed(() =>
     ),
 );
 
+const chipsInPlay = computed(
+    () => chipsPerPlayer.value * selectedPlayersCount.value,
+);
+
 const leftoverChips = computed(() =>
     chipSplit.value.filter((chip) => chip.leftover > 0),
+);
+
+const leftoverChipsValue = computed(
+    () => totalChipsValue.value - chipsInPlay.value,
 );
 
 const canCreateRound = computed(
@@ -168,7 +176,7 @@ const openCreateDialog = () => {
 const submitCreate = () => {
     createForm
         .transform((data) => ({
-            total_chips: chipsPerPlayer.value * selectedPlayersCount.value,
+            total_chips: chipsInPlay.value,
             chips_per_player: chipsPerPlayer.value,
             user_ids: data.user_ids,
         }))
@@ -839,15 +847,43 @@ const visitRound = (roundId: number) => {
                                     />
                                 </div>
                             </div>
-                            <p class="text-xs text-muted-foreground">
-                                Total disponível:
-                                <span
-                                    class="font-medium text-foreground tabular-nums"
+                            <div
+                                class="grid gap-1 rounded-lg border bg-muted/30 p-3 text-xs"
+                            >
+                                <p
+                                    class="flex items-center justify-between gap-2 text-muted-foreground"
                                 >
-                                    {{ totalChipsValue }}
-                                </span>
-                                em fichas
-                            </p>
+                                    <span>Total disponível</span>
+                                    <span
+                                        class="font-medium text-foreground tabular-nums"
+                                    >
+                                        {{ totalChipsValue }} em fichas
+                                    </span>
+                                </p>
+                                <p
+                                    v-if="selectedPlayersCount >= 2"
+                                    class="flex items-center justify-between gap-2 text-muted-foreground"
+                                >
+                                    <span>Em jogo</span>
+                                    <span
+                                        class="font-medium text-foreground tabular-nums"
+                                    >
+                                        {{ chipsInPlay }} em fichas
+                                    </span>
+                                </p>
+                                <p
+                                    v-if="
+                                        selectedPlayersCount >= 2 &&
+                                        leftoverChipsValue > 0
+                                    "
+                                    class="flex items-center justify-between gap-2 text-destructive"
+                                >
+                                    <span>Fora da rodada</span>
+                                    <span class="font-medium tabular-nums">
+                                        {{ leftoverChipsValue }} em fichas
+                                    </span>
+                                </p>
+                            </div>
                             <InputError
                                 :message="createForm.errors.total_chips"
                             />
@@ -924,7 +960,7 @@ const visitRound = (roundId: number) => {
                                         </li>
                                     </ul>
                                 </div>
-                                
+
                                 <InputError
                                     :message="
                                         createForm.errors.chips_per_player
