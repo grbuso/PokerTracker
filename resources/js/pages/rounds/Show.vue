@@ -319,6 +319,14 @@ const cell = (userId: number, day: string): string => {
     return snapshot.chips === 0 ? 'Eliminado' : String(snapshot.chips);
 };
 
+const historyCellClass = (userId: number, day: string): string => {
+    const snapshot = props.snapshots.find(
+        (item) => item.user_id === userId && item.recorded_on === day,
+    );
+
+    return snapshot && snapshot.chips > 0 ? '' : 'text-muted-foreground';
+};
+
 const formatDay = (day: string): string => {
     const [, month, date] = day.split('-');
 
@@ -566,7 +574,7 @@ const submit = () => {
                             Small / Big
                         </p>
                     </div>
-                    
+
                     <div
                         class="rounded-xl border bg-background/70 p-3 backdrop-blur-sm"
                     >
@@ -614,8 +622,6 @@ const submit = () => {
                             Data de criação
                         </p>
                     </div>
-
-                    
                 </div>
             </CardContent>
         </Card>
@@ -985,11 +991,6 @@ const submit = () => {
                                         v-for="player in round.players"
                                         :key="player.id"
                                         class="border-t"
-                                        :class="
-                                            player.pivot.eliminated_at
-                                                ? 'text-muted-foreground'
-                                                : ''
-                                        "
                                     >
                                         <td class="px-3 py-2.5">
                                             <span
@@ -1017,7 +1018,7 @@ const submit = () => {
                                                     :class="
                                                         player.pivot
                                                             .eliminated_at
-                                                            ? 'line-through'
+                                                            ? 'text-muted-foreground line-through'
                                                             : ''
                                                     "
                                                 >
@@ -1029,6 +1030,9 @@ const submit = () => {
                                             v-for="day in days"
                                             :key="day"
                                             class="px-3 py-2.5 text-center tabular-nums"
+                                            :class="
+                                                historyCellClass(player.id, day)
+                                            "
                                         >
                                             {{ cell(player.id, day) }}
                                         </td>
