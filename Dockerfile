@@ -34,6 +34,7 @@ COPY --from=assets /app/public/build ./public/build
 
 COPY docker/nginx.conf /etc/nginx/http.d/default.conf
 COPY docker/supervisord.conf /etc/supervisord.conf
+COPY docker/uploads.ini /usr/local/etc/php/conf.d/uploads.ini
 COPY --chmod=755 docker/entrypoint.sh /entrypoint.sh
 
 EXPOSE 80
