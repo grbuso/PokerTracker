@@ -6,6 +6,7 @@ use App\Actions\CalculateRoundBlinds;
 use App\Actions\CreateRound;
 use App\Http\Requests\StoreRoundRequest;
 use App\Models\ChipSnapshot;
+use App\Models\ChipSubmission;
 use App\Models\Round;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -95,6 +96,12 @@ class RoundController extends Controller
                     'eliminated_at' => $chips === 0 ? $data['recorded_on'] : null,
                 ]);
             }
+
+            ChipSubmission::query()
+                ->where('round_id', $round->id)
+                ->whereDate('recorded_on', $data['recorded_on'])
+                ->whereNull('registered_at')
+                ->update(['registered_at' => now()]);
         });
 
         Inertia::flash('toast', [

@@ -2,10 +2,15 @@
 
 use App\Http\Controllers\Admin\PlayerController;
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\DiscordInteractionController;
 use App\Http\Controllers\RoundController;
+use App\Http\Controllers\RoundSubmissionController;
 use Illuminate\Support\Facades\Route;
 
 Route::inertia('/', 'Welcome')->name('home');
+
+Route::post('discord/interactions', DiscordInteractionController::class)
+    ->name('discord.interactions');
 
 Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('dashboard', [DashboardController::class, 'index'])->name('dashboard');
@@ -27,6 +32,9 @@ Route::middleware(['auth', 'verified', 'can:manage-game'])->group(function () {
     Route::post('rounds/{round}/snapshots', [RoundController::class, 'storeSnapshot'])
         ->whereNumber('round')
         ->name('rounds.snapshots.store');
+    Route::get('rounds/{round}/submissions', [RoundSubmissionController::class, 'index'])
+        ->whereNumber('round')
+        ->name('rounds.submissions.index');
 
     Route::resource('admin/players', PlayerController::class)
         ->except(['show', 'create', 'edit'])

@@ -4,6 +4,7 @@ export type User = {
     email: string;
     avatar?: string;
     is_admin: boolean;
+    discord_id: string | null;
     email_verified_at: string | null;
     created_at: string;
     updated_at: string;

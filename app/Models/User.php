@@ -21,6 +21,7 @@ use Illuminate\Support\Facades\Storage;
  * @property string $password
  * @property bool $is_admin
  * @property string|null $avatar_path
+ * @property string|null $discord_id
  * @property-read string|null $avatar
  * @property string|null $two_factor_secret
  * @property string|null $two_factor_recovery_codes
@@ -31,7 +32,7 @@ use Illuminate\Support\Facades\Storage;
  * @property-read RoundUser $pivot
  * @property-read int $rounds_count
  */
-#[Fillable(['name', 'email', 'password', 'avatar_path'])]
+#[Fillable(['name', 'email', 'password', 'avatar_path', 'discord_id'])]
 #[Hidden(['password', 'avatar_path', 'two_factor_secret', 'two_factor_recovery_codes', 'remember_token'])]
 class User extends Authenticatable
 {
@@ -61,6 +62,8 @@ class User extends Authenticatable
 
     /**
      * Get the public URL of the user's avatar.
+     *
+     * @return Attribute<?string, never>
      */
     protected function avatar(): Attribute
     {

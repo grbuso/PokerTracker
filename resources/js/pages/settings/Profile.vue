@@ -2,6 +2,7 @@
 import { Form, Head, usePage } from '@inertiajs/vue3';
 import { computed, onBeforeUnmount, ref } from 'vue';
 import ProfileController from '@/actions/App/Http/Controllers/Settings/ProfileController';
+import DiscordLinkController from '@/actions/App/Http/Controllers/Settings/DiscordLinkController';
 import DeleteUser from '@/components/DeleteUser.vue';
 import Heading from '@/components/Heading.vue';
 import InputError from '@/components/InputError.vue';
@@ -23,12 +24,27 @@ defineOptions({
     },
 });
 
-defineProps<{ canDeleteAccount: boolean }>();
+const props = defineProps<{
+    canDeleteAccount: boolean;
+    discordLinkToken: string | null;
+    discordLinkExpiresAt: string | null;
+}>();
 
 const page = usePage();
 const user = computed(() => page.props.auth.user);
 
 const { getInitials } = useInitials();
+
+const discordLinkExpiry = computed(() => {
+    if (!props.discordLinkExpiresAt) {
+        return null;
+    }
+
+    return new Date(props.discordLinkExpiresAt).toLocaleTimeString('pt-BR', {
+        hour: '2-digit',
+        minute: '2-digit',
+    });
+});
 
 const preview = ref<string | null>(null);
 const avatarFileName = ref<string | null>(null);
@@ -152,6 +168,61 @@ onBeforeUnmount(() => {
                 >
             </div>
         </Form>
+
+        <Heading
+            variant="small"
+            title="Discord"
+            description="Vincule sua conta para enviar as fichas do dia pelo bot"
+        />
+
+        <div v-if="user.discord_id" class="rounded-lg border p-4 text-sm">
+            <p class="font-medium">Conta vinculada</p>
+            <p class="text-muted-foreground">
+                Seu Discord já está ligado a esta conta. Use
+                <code class="rounded bg-muted px-1 py-0.5">/fichas</code>
+                no canal de fichas.
+            </p>
+        </div>
+
+        <div v-else class="space-y-3">
+            <p class="text-sm text-muted-foreground">
+                Gere um código temporário e envie
+                <code class="rounded bg-muted px-1 py-0.5"
+                    >/vincular CÓDIGO</code
+                >
+                no canal de fichas do Discord.
+            </p>
+
+            <Form
+                v-bind="DiscordLinkController.store.form()"
+                v-slot="{ processing }"
+            >
+                <Button :disabled="processing">Gerar código</Button>
+            </Form>
+
+            <div
+                v-if="discordLinkToken"
+                class="rounded-lg border bg-muted/40 p-4"
+            >
+                <p
+                    class="text-[11px] font-medium tracking-wide text-muted-foreground uppercase"
+                >
+                    Seu código
+                </p>
+                <p class="font-mono text-lg font-semibold tracking-[0.2em]">
+                    {{ discordLinkToken }}
+                </p>
+                <p class="text-xs text-muted-foreground">
+                    Use
+                    <code class="rounded bg-muted px-1 py-0.5"
+                        >/vincular {{ discordLinkToken }}</code
+                    >
+                    <template v-if="discordLinkExpiry">
+                        até {{ discordLinkExpiry }}.
+                    </template>
+                </p>
+            </div>
+        </div>
     </div>
 
     <DeleteUser v-if="canDeleteAccount" />

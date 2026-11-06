@@ -35,4 +35,12 @@ return [
         ],
     ],
 
+    'discord' => [
+        'application_id' => env('DISCORD_APPLICATION_ID'),
+        'bot_token' => env('DISCORD_BOT_TOKEN'),
+        'public_key' => env('DISCORD_PUBLIC_KEY'),
+        'guild_id' => env('DISCORD_GUILD_ID'),
+        'chips_channel_id' => env('DISCORD_CHIPS_CHANNEL_ID'),
+    ],
+
 ];

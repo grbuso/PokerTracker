@@ -26,6 +26,8 @@ class ProfileController extends Controller
             'mustVerifyEmail' => $user instanceof MustVerifyEmail,
             'status' => $request->session()->get('status'),
             'canDeleteAccount' => ! $user->is_admin && ! $user->rounds()->exists(),
+            'discordLinkToken' => $request->session()->get('discord_link_token'),
+            'discordLinkExpiresAt' => $request->session()->get('discord_link_expires_at'),
         ]);
     }
 
