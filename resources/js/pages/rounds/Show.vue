@@ -4,11 +4,14 @@ import {
     ArrowLeft,
     CalendarDays,
     ChartLine,
+    CircleDollarSign,
     Clock,
     Coins,
     Flag,
+    Gauge,
     Table2,
     Trash2,
+    TrendingUp,
     Trophy,
     UserX,
 } from '@lucide/vue';
@@ -62,6 +65,11 @@ const props = defineProps<{
         players: Player[];
     };
     snapshots: Snapshot[];
+    blinds: {
+        day: number;
+        small: number;
+        big: number;
+    };
 }>();
 
 defineOptions({
@@ -534,7 +542,31 @@ const submit = () => {
                     </div>
                 </div>
 
-                <div class="grid grid-cols-2 gap-3 self-center">
+                <div class="grid grid-cols-3 gap-3 self-center">
+                    <div
+                        class="rounded-xl border bg-background/70 p-3 backdrop-blur-sm"
+                    >
+                        <div
+                            class="flex items-center gap-1.5 text-muted-foreground"
+                        >
+                            <TrendingUp class="size-3.5" />
+                            <p
+                                class="text-[11px] font-medium tracking-wide uppercase"
+                            >
+                                Blinds · Dia {{ blinds.day }}
+                            </p>
+                        </div>
+                        <p class="mt-1 text-lg font-semibold tabular-nums">
+                            {{ formatChips(blinds.small) }} /
+                            {{ formatChips(blinds.big) }}
+                        </p>
+                        <p
+                            class="truncate text-[11px] text-muted-foreground tabular-nums"
+                        >
+                            Small / Big
+                        </p>
+                    </div>
+                    
                     <div
                         class="rounded-xl border bg-background/70 p-3 backdrop-blur-sm"
                     >
@@ -582,6 +614,8 @@ const submit = () => {
                             Data de criação
                         </p>
                     </div>
+
+                    
                 </div>
             </CardContent>
         </Card>

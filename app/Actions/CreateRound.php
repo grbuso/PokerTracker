@@ -18,6 +18,7 @@ class CreateRound
             $round = Round::create([
                 'starts_on' => now()->toDateString(),
                 'total_chips' => $totalChips,
+                'chips_per_player' => $chipsPerPlayer,
                 'status' => 'ativa',
             ]);
 

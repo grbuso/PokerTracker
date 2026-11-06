@@ -12,13 +12,14 @@ use Illuminate\Support\Carbon;
  * @property int $id
  * @property Carbon $starts_on
  * @property int $total_chips
+ * @property int|null $chips_per_player
  * @property string $status
  * @property-read Collection<int, User> $players
  * @property-read Collection<int, ChipSnapshot> $snapshots
  */
 class Round extends Model
 {
-    protected $fillable = ['starts_on', 'total_chips', 'status'];
+    protected $fillable = ['starts_on', 'total_chips', 'chips_per_player', 'status'];
 
     /**
      * @return array<string, string>
@@ -28,6 +29,7 @@ class Round extends Model
         return [
             'starts_on' => 'date',
             'total_chips' => 'integer',
+            'chips_per_player' => 'integer',
         ];
     }
 

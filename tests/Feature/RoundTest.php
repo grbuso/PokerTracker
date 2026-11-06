@@ -27,6 +27,56 @@ test('round show page loads the requested round players', function () {
         );
 });
 
+test('round show page exposes the first blind before any day is recorded', function () {
+    $user = User::factory()->create();
+    $player = User::factory()->create();
+    $round = Round::create([
+        'starts_on' => '2026-10-28',
+        'total_chips' => 1000,
+        'chips_per_player' => 1000,
+        'status' => 'ativa',
+    ]);
+    $round->players()->attach($player->id, ['chips' => 1000]);
+
+    $this->actingAs($user);
+
+    $this->get(route('rounds.show', $round))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('blinds.day', 1)
+            ->where('blinds.small', 10)
+            ->where('blinds.big', 20)
+        );
+});
+
+test('a recorded day advances the blinds to the next level', function () {
+    $user = User::factory()->create();
+    $firstPlayer = User::factory()->create();
+    $secondPlayer = User::factory()->create();
+    $round = Round::create([
+        'starts_on' => '2026-10-28',
+        'total_chips' => 2000,
+        'chips_per_player' => 1000,
+        'status' => 'ativa',
+    ]);
+    $round->players()->attach($firstPlayer->id, ['chips' => 1000]);
+    $round->players()->attach($secondPlayer->id, ['chips' => 1000]);
+    $round->snapshots()->createMany([
+        ['user_id' => $firstPlayer->id, 'recorded_on' => '2026-10-28', 'chips' => 1200],
+        ['user_id' => $secondPlayer->id, 'recorded_on' => '2026-10-28', 'chips' => 800],
+    ]);
+
+    $this->actingAs($user);
+
+    $this->get(route('rounds.show', $round))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('blinds.day', 2)
+            ->where('blinds.small', 15)
+            ->where('blinds.big', 30)
+        );
+});
+
 test('a daily snapshot updates chips and eliminates players at zero', function () {
     $user = User::factory()->admin()->create();
     $player = User::factory()->create();

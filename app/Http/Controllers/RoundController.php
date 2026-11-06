@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Actions\CalculateRoundBlinds;
 use App\Actions\CreateRound;
 use App\Http\Requests\StoreRoundRequest;
 use App\Models\ChipSnapshot;
@@ -33,13 +34,19 @@ class RoundController extends Controller
         return redirect()->route('dashboard');
     }
 
-    public function show(Request $request, Round $round): Response
-    {
+    public function show(
+        Request $request,
+        Round $round,
+        CalculateRoundBlinds $calculateBlinds,
+    ): Response {
+        $round->load([
+            'players' => fn ($query) => $query->orderBy('name'),
+        ]);
+
         return Inertia::render('rounds/Show', [
             'canManage' => $request->user()->can('manage-game'),
-            'round' => $round->load([
-                'players' => fn ($query) => $query->orderBy('name'),
-            ]),
+            'round' => $round,
+            'blinds' => $calculateBlinds->handle($round),
             'snapshots' => $round->snapshots()
                 ->orderBy('recorded_on')
                 ->get(['user_id', 'recorded_on', 'chips']),
@@ -58,9 +65,9 @@ class RoundController extends Controller
         }
 
         $data = $request->validate([
-            'recorded_on' => ['required', 'date', 'after_or_equal:' . $round->starts_on->toDateString()],
+            'recorded_on' => ['required', 'date', 'after_or_equal:'.$round->starts_on->toDateString()],
             'chips' => ['required', 'array'],
-            'chips.*' => ['required', 'integer', 'min:0']
+            'chips.*' => ['required', 'integer', 'min:0'],
         ]);
 
         $activeIds = $round->players()
