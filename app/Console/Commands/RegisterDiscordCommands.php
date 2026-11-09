@@ -27,7 +27,7 @@ class RegisterDiscordCommands extends Command
             ? "https://discord.com/api/v10/applications/{$applicationId}/guilds/{$guildId}/commands"
             : "https://discord.com/api/v10/applications/{$applicationId}/commands";
 
-        $response = Http::withToken($botToken)->put($url, [
+        $response = Http::withToken($botToken, 'Bot')->put($url, [
             [
                 'name' => 'fichas',
                 'description' => 'Envia as suas fichas do dia',
@@ -51,6 +51,10 @@ class RegisterDiscordCommands extends Command
         if ($response->failed()) {
             $this->error('Discord rejected the command registration:');
             $this->line($response->body());
+
+            if ($response->status() === 401) {
+                $this->warn('401 Unauthorized: confira o DISCORD_BOT_TOKEN (é o token do bot, não o client secret).');
+            }
 
             return self::FAILURE;
         }
