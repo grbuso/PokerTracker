@@ -1,26 +1,22 @@
 <script setup lang="ts">
-import { Head, Link, router, useForm } from '@inertiajs/vue3';
+import { Head, Link, router } from '@inertiajs/vue3';
 import {
     ArrowLeft,
     CalendarDays,
-    ChartLine,
     CircleDollarSign,
     Clock,
     Coins,
     Flag,
     Gauge,
     Inbox,
-    Table2,
     Trash2,
     TrendingUp,
     Trophy,
-    UserX,
 } from '@lucide/vue';
-import { computed, ref, watch } from 'vue';
+import { computed, ref } from 'vue';
 import RoundController from '@/actions/App/Http/Controllers/RoundController';
 import RoundSubmissionController from '@/actions/App/Http/Controllers/RoundSubmissionController';
 import ChipTrendChart from '@/components/ChipTrendChart.vue';
-import InputError from '@/components/InputError.vue';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -85,210 +81,7 @@ const activePlayers = computed(() =>
     props.round.players.filter((player) => !player.pivot.eliminated_at),
 );
 
-const isoToDisplay = (iso: string): string => {
-    const [year, month, day] = iso.split('-');
-
-    return year && month && day ? `${day}/${month}/${year}` : '';
-};
-
-const displayToIso = (display: string): string => {
-    const match = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(display);
-
-    if (!match) {
-        return '';
-    }
-
-    const [, day, month, year] = match;
-    const date = new Date(
-        Date.UTC(Number(year), Number(month) - 1, Number(day)),
-    );
-    const isValid =
-        date.getUTCFullYear() === Number(year) &&
-        date.getUTCMonth() === Number(month) - 1 &&
-        date.getUTCDate() === Number(day);
-
-    return isValid ? `${year}-${month}-${day}` : '';
-};
-
-const maskDate = (value: string): string => {
-    const digits = value.replace(/\D/g, '').slice(0, 8);
-
-    if (digits.length <= 2) {
-        return digits;
-    }
-
-    if (digits.length <= 4) {
-        return `${digits.slice(0, 2)}/${digits.slice(2)}`;
-    }
-
-    return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`;
-};
-
-const chipDenominations = [100, 50, 25, 10, 5] as const;
-
-const emptyChipCounts = (): Record<number, number> =>
-    chipDenominations.reduce<Record<number, number>>((counts, value) => {
-        counts[value] = 0;
-
-        return counts;
-    }, {});
-
-const chipCountsFromTotal = (total: number): Record<number, number> => {
-    let remaining = Math.max(0, Math.floor(total));
-    const counts = emptyChipCounts();
-
-    for (const value of chipDenominations) {
-        counts[value] = Math.floor(remaining / value);
-        remaining -= counts[value] * value;
-    }
-
-    return counts;
-};
-
-const form = useForm({
-    recorded_on: new Date().toLocaleDateString('sv-SE'),
-    chips: {} as Record<number, number>,
-});
-
-const chipCounts = ref<Record<number, Record<number, number>>>({});
-
-const recordedOnDisplay = ref(isoToDisplay(form.recorded_on));
-
-const dateInput = ref<HTMLInputElement | null>(null);
-
-const openDatePicker = () => {
-    const input = dateInput.value;
-
-    if (!input) {
-        return;
-    }
-
-    if (typeof input.showPicker === 'function') {
-        input.showPicker();
-    } else {
-        input.focus();
-    }
-};
-
-const onDateInput = (event: Event) => {
-    const target = event.target as HTMLInputElement;
-    const formatted = maskDate(target.value);
-
-    recordedOnDisplay.value = formatted;
-    target.value = formatted;
-    form.recorded_on = displayToIso(formatted);
-};
-
-const onDatePicked = (event: Event) => {
-    const target = event.target as HTMLInputElement;
-
-    form.recorded_on = target.value;
-    recordedOnDisplay.value = isoToDisplay(target.value);
-};
-
-const chipCountsTotal = (counts?: Record<number, number>): number =>
-    chipDenominations.reduce(
-        (total, value) => total + (counts?.[value] ?? 0) * value,
-        0,
-    );
-
-const playerChipTotal = (userId: number): number =>
-    chipCountsTotal(chipCounts.value[userId]);
-
-const playerTotal = (userId: number): number =>
-    Number(form.chips[userId] ?? 0) || 0;
-
-const parseChipAmount = (value: string): number => {
-    const parsed = Number(value);
-
-    return Number.isFinite(parsed) ? Math.max(0, Math.trunc(parsed)) : 0;
-};
-
-const onChipCountInput = (
-    userId: number,
-    denomination: number,
-    event: Event,
-): void => {
-    const target = event.target as HTMLInputElement;
-
-    chipCounts.value[userId][denomination] = parseChipAmount(target.value);
-    form.chips[userId] = playerChipTotal(userId);
-};
-
-const onTotalInput = (userId: number, event: Event): void => {
-    const target = event.target as HTMLInputElement;
-    const total = parseChipAmount(target.value);
-
-    form.chips[userId] = total;
-    chipCounts.value[userId] = chipCountsFromTotal(total);
-};
-
-const eliminate = (player: Player) => {
-    chipCounts.value[player.id] = emptyChipCounts();
-    form.chips[player.id] = 0;
-};
-
-const activePlayersKey = computed(() =>
-    activePlayers.value
-        .map((player) => `${player.id}:${player.pivot.chips}`)
-        .join('|'),
-);
-
-watch(
-    activePlayersKey,
-    () => {
-        chipCounts.value = activePlayers.value.reduce<
-            Record<number, Record<number, number>>
-        >((counts, player) => {
-            const existing = chipCounts.value[player.id];
-            const pivotChips = Number(player.pivot.chips);
-
-            counts[player.id] =
-                existing && chipCountsTotal(existing) === pivotChips
-                    ? existing
-                    : chipCountsFromTotal(pivotChips);
-
-            return counts;
-        }, {});
-
-        form.chips = activePlayers.value.reduce<Record<number, number>>(
-            (chips, player) => {
-                const existing = Number(form.chips[player.id]);
-                const pivotChips = Number(player.pivot.chips);
-
-                chips[player.id] =
-                    existing === pivotChips ? existing : pivotChips;
-
-                return chips;
-            },
-            {},
-        );
-    },
-    { immediate: true },
-);
-
-const sum = computed(() =>
-    activePlayers.value.reduce(
-        (total, player) => total + playerTotal(player.id),
-        0,
-    ),
-);
-
-const sumMatches = computed(() => sum.value === props.round.total_chips);
-
 const isActive = computed(() => props.round.status === 'ativa');
-
-const dateIsValid = computed(
-    () => displayToIso(recordedOnDisplay.value) !== '',
-);
-
-const canSave = computed(
-    () =>
-        isActive.value &&
-        activePlayers.value.length > 0 &&
-        sumMatches.value &&
-        dateIsValid.value,
-);
 
 const statusLabel = computed(() =>
     props.round.status === 'ativa' ? 'Em andamento' : 'Encerrada',
@@ -299,11 +92,6 @@ const statusClass = computed(() =>
         ? 'border-emerald-500/20 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400'
         : 'border-border bg-muted text-muted-foreground',
 );
-
-const playerStatusClass = (eliminated: boolean): string =>
-    eliminated
-        ? 'border-destructive/20 bg-destructive/10 text-destructive'
-        : 'border-emerald-500/20 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400';
 
 const days = computed(() => [
     ...new Set(props.snapshots.map((snapshot) => snapshot.recorded_on)),
@@ -383,7 +171,6 @@ const roundCreatedOn = computed(() => {
     return year && month && day ? `${day}/${month}/${year}` : value;
 });
 
-const historyView = ref<'table' | 'chart'>('table');
 const closeOpen = ref(false);
 const deleteOpen = ref(false);
 
@@ -397,20 +184,6 @@ const closeRound = () => {
 const deleteRound = () => {
     deleteOpen.value = false;
     router.delete(RoundController.destroy.url(props.round.id));
-};
-
-const submit = () => {
-    if (!isActive.value) {
-        return;
-    }
-
-    activePlayers.value.forEach((player) => {
-        form.chips[player.id] = playerTotal(player.id);
-    });
-
-    form.post(RoundController.storeSnapshot.url(props.round.id), {
-        preserveScroll: true,
-    });
 };
 </script>
 
@@ -444,6 +217,13 @@ const submit = () => {
                     <Link :href="dashboard()">
                         <ArrowLeft class="size-4" />
                         Dashboard
+                    </Link>
+                </Button>
+
+                <Button v-if="canManage" as-child variant="outline">
+                    <Link :href="RoundSubmissionController.index.url(round.id)">
+                        <Inbox class="size-4" />
+                        Envios
                     </Link>
                 </Button>
 
@@ -629,296 +409,7 @@ const submit = () => {
         </Card>
 
         <div class="grid gap-4 xl:grid-cols-2">
-            <Card>
-                <CardHeader>
-                    <CardTitle>
-                        {{
-                            isActive
-                                ? canManage
-                                    ? 'Registrar o dia'
-                                    : 'Rodada em andamento'
-                                : 'Rodada encerrada'
-                        }}
-                    </CardTitle>
-                    <CardDescription
-                        v-if="isActive && activePlayers.length && canManage"
-                    >
-                        Informe as denominações ou o total de fichas de quem
-                        continua na mesa.
-                    </CardDescription>
-                    <CardDescription
-                        v-else-if="isActive && activePlayers.length === 0"
-                    >
-                        Todos os jogadores desta rodada foram eliminados.
-                    </CardDescription>
-                    <CardAction
-                        v-if="canManage && isActive && activePlayers.length"
-                    >
-                        <div class="grid justify-items-end gap-1">
-                            <div
-                                class="relative flex h-9 w-fit items-center overflow-hidden rounded-md border border-input shadow-xs focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/50"
-                            >
-                                <input
-                                    id="recorded_on"
-                                    v-model="recordedOnDisplay"
-                                    type="text"
-                                    inputmode="numeric"
-                                    autocomplete="off"
-                                    maxlength="10"
-                                    placeholder="DD/MM/AAAA"
-                                    aria-label="Data do registro"
-                                    class="h-full w-28 bg-transparent pr-2 pl-3 text-sm outline-none placeholder:text-muted-foreground"
-                                    @input="onDateInput"
-                                />
-                                <input
-                                    ref="dateInput"
-                                    type="date"
-                                    tabindex="-1"
-                                    aria-hidden="true"
-                                    :value="form.recorded_on"
-                                    class="pointer-events-none absolute inset-0 h-full w-full [color-scheme:light] opacity-0 dark:[color-scheme:dark]"
-                                    @change="onDatePicked"
-                                />
-                                <button
-                                    type="button"
-                                    class="flex h-full w-9 items-center justify-center border-l border-input text-muted-foreground transition-colors outline-none hover:bg-muted hover:text-foreground focus-visible:bg-muted focus-visible:text-foreground"
-                                    aria-label="Abrir calendário"
-                                    @click="openDatePicker"
-                                >
-                                    <CalendarDays class="size-4" />
-                                </button>
-                            </div>
-                            <InputError :message="form.errors.recorded_on" />
-                        </div>
-                    </CardAction>
-                </CardHeader>
-
-                <CardContent>
-                    <form
-                        v-if="canManage && isActive && activePlayers.length"
-                        class="space-y-4"
-                        @submit.prevent="submit"
-                    >
-                        <div class="overflow-x-auto rounded-lg border">
-                            <table class="w-full text-sm">
-                                <thead
-                                    class="bg-muted/50 text-left text-[11px] tracking-wide text-muted-foreground uppercase"
-                                >
-                                    <tr>
-                                        <th class="px-3 py-2.5 font-medium">
-                                            Jogador
-                                        </th>
-                                        <th
-                                            v-for="value in chipDenominations"
-                                            :key="value"
-                                            class="px-1 py-2.5 text-center font-medium"
-                                        >
-                                            {{ value }}
-                                        </th>
-                                        <th
-                                            class="px-2 py-2.5 text-center font-medium"
-                                        >
-                                            Total
-                                        </th>
-                                        <th class="px-2 py-2.5">
-                                            <span class="sr-only">Ações</span>
-                                        </th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    <tr
-                                        v-for="player in round.players"
-                                        :key="player.id"
-                                        class="border-t"
-                                        :class="
-                                            player.pivot.eliminated_at
-                                                ? 'text-muted-foreground'
-                                                : ''
-                                        "
-                                    >
-                                        <td class="px-3 py-2.5">
-                                            <span
-                                                class="inline-flex items-center gap-2"
-                                            >
-                                                <Avatar
-                                                    class="size-6 overflow-hidden rounded-full"
-                                                >
-                                                    <AvatarImage
-                                                        v-if="player.avatar"
-                                                        :src="player.avatar"
-                                                        :alt="player.name"
-                                                    />
-                                                    <AvatarFallback
-                                                        class="text-[10px]"
-                                                    >
-                                                        {{
-                                                            getInitials(
-                                                                player.name,
-                                                            )
-                                                        }}
-                                                    </AvatarFallback>
-                                                </Avatar>
-                                                <span
-                                                    :class="
-                                                        player.pivot
-                                                            .eliminated_at
-                                                            ? 'line-through'
-                                                            : ''
-                                                    "
-                                                >
-                                                    {{ player.name }}
-                                                </span>
-                                            </span>
-                                        </td>
-                                        <template
-                                            v-if="!player.pivot.eliminated_at"
-                                        >
-                                            <td
-                                                v-for="value in chipDenominations"
-                                                :key="value"
-                                                class="px-1 py-2.5 text-center"
-                                            >
-                                                <input
-                                                    v-model.number="
-                                                        chipCounts[player.id][
-                                                            value
-                                                        ]
-                                                    "
-                                                    type="number"
-                                                    inputmode="numeric"
-                                                    min="0"
-                                                    :aria-label="`Fichas de ${value} de ${player.name}`"
-                                                    class="h-8 w-12 rounded-md border border-input bg-transparent px-1 text-center text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
-                                                    @input="
-                                                        onChipCountInput(
-                                                            player.id,
-                                                            value,
-                                                            $event,
-                                                        )
-                                                    "
-                                                />
-                                            </td>
-                                            <td class="px-2 py-2.5 text-center">
-                                                <input
-                                                    v-model.number="
-                                                        form.chips[player.id]
-                                                    "
-                                                    type="number"
-                                                    inputmode="numeric"
-                                                    min="0"
-                                                    :aria-label="`Total de fichas de ${player.name}`"
-                                                    class="h-8 w-20 rounded-md border border-input bg-transparent px-1 text-center text-sm font-medium shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
-                                                    @input="
-                                                        onTotalInput(
-                                                            player.id,
-                                                            $event,
-                                                        )
-                                                    "
-                                                />
-                                                <p
-                                                    v-if="
-                                                        playerChipTotal(
-                                                            player.id,
-                                                        ) !==
-                                                        playerTotal(player.id)
-                                                    "
-                                                    class="mt-1 text-[10px] text-muted-foreground tabular-nums"
-                                                >
-                                                    Contagem:
-                                                    {{
-                                                        formatChips(
-                                                            playerChipTotal(
-                                                                player.id,
-                                                            ),
-                                                        )
-                                                    }}
-                                                </p>
-                                            </td>
-                                            <td class="px-2 py-2.5 text-center">
-                                                <Button
-                                                    type="button"
-                                                    variant="ghost"
-                                                    size="icon-sm"
-                                                    class="size-7 text-muted-foreground hover:bg-muted hover:text-foreground"
-                                                    :disabled="
-                                                        playerTotal(
-                                                            player.id,
-                                                        ) === 0
-                                                    "
-                                                    :aria-label="`Eliminar ${player.name} e zerar as fichas`"
-                                                    title="Eliminar (zerar fichas)"
-                                                    @click="eliminate(player)"
-                                                >
-                                                    <UserX class="size-3.5" />
-                                                </Button>
-                                            </td>
-                                        </template>
-                                        <td
-                                            v-else
-                                            :colspan="
-                                                chipDenominations.length + 2
-                                            "
-                                            class="px-2 py-2.5 text-center"
-                                        >
-                                            <Badge
-                                                variant="outline"
-                                                :class="playerStatusClass(true)"
-                                            >
-                                                Eliminado
-                                            </Badge>
-                                        </td>
-                                    </tr>
-                                </tbody>
-                            </table>
-                        </div>
-
-                        <InputError :message="form.errors.chips" />
-
-                        <div
-                            class="flex flex-wrap items-center justify-between gap-3"
-                        >
-                            <p
-                                class="text-xs"
-                                :class="
-                                    sumMatches
-                                        ? 'text-muted-foreground'
-                                        : 'text-destructive'
-                                "
-                            >
-                                Soma {{ formatChips(sum) }} /
-                                {{ formatChips(round.total_chips) }}
-                                <span v-if="!sumMatches">
-                                    · precisa fechar antes de salvar
-                                </span>
-                            </p>
-                            <Button
-                                type="submit"
-                                :disabled="form.processing || !canSave"
-                            >
-                                Salvar o dia
-                            </Button>
-                        </div>
-                    </form>
-
-                    <p
-                        v-else-if="!isActive"
-                        class="text-sm text-muted-foreground"
-                    >
-                        Não é possível alterar dados de rodadas encerradas.
-                    </p>
-                    <p
-                        v-else-if="!canManage"
-                        class="text-sm text-muted-foreground"
-                    >
-                        Apenas o administrador pode registrar as fichas do dia.
-                    </p>
-                    <p v-else class="text-sm text-muted-foreground">
-                        Crie uma nova rodada no dashboard para continuar.
-                    </p>
-                </CardContent>
-            </Card>
-
-            <Card>
+            <Card class="min-w-0">
                 <CardHeader>
                     <CardTitle>Histórico</CardTitle>
                     <CardDescription>
@@ -929,126 +420,102 @@ const submit = () => {
                                 : 'dias registrados'
                         }}
                     </CardDescription>
-                    <CardAction>
-                        <div
-                            class="flex items-center gap-1 rounded-lg border p-0.5"
-                        >
-                            <Button
-                                type="button"
-                                :variant="
-                                    historyView === 'table'
-                                        ? 'secondary'
-                                        : 'ghost'
-                                "
-                                size="sm"
-                                :aria-pressed="historyView === 'table'"
-                                @click="historyView = 'table'"
-                            >
-                                <Table2 class="size-3.5" />
-                                <span class="hidden sm:inline">Tabela</span>
-                            </Button>
-                            <Button
-                                type="button"
-                                :variant="
-                                    historyView === 'chart'
-                                        ? 'secondary'
-                                        : 'ghost'
-                                "
-                                size="sm"
-                                :aria-pressed="historyView === 'chart'"
-                                @click="historyView = 'chart'"
-                            >
-                                <ChartLine class="size-3.5" />
-                                <span class="hidden sm:inline">Evolução</span>
-                            </Button>
-                        </div>
-                    </CardAction>
                 </CardHeader>
 
                 <CardContent class="flex-1">
-                    <template v-if="days.length">
-                        <div
-                            v-if="historyView === 'table'"
-                            class="overflow-x-auto rounded-lg border"
-                        >
-                            <table class="w-full table-fixed text-sm">
-                                <thead
-                                    class="bg-muted/50 text-left text-[11px] tracking-wide text-muted-foreground uppercase"
-                                >
-                                    <tr>
-                                        <th class="px-3 py-2.5 font-medium">
-                                            Jogador
-                                        </th>
-                                        <th
-                                            v-for="day in days"
-                                            :key="day"
-                                            class="px-3 py-2.5 text-center font-medium whitespace-nowrap"
-                                        >
-                                            {{ formatDay(day) }}
-                                        </th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    <tr
-                                        v-for="player in round.players"
-                                        :key="player.id"
-                                        class="border-t"
+                    <div
+                        v-if="days.length"
+                        class="overflow-x-auto rounded-lg border"
+                    >
+                        <table class="w-full table-fixed text-sm">
+                            <thead
+                                class="bg-muted/50 text-left text-[11px] tracking-wide text-muted-foreground uppercase"
+                            >
+                                <tr>
+                                    <th class="px-3 py-2.5 font-medium">
+                                        Jogador
+                                    </th>
+                                    <th
+                                        v-for="day in days"
+                                        :key="day"
+                                        class="px-3 py-2.5 text-center font-medium whitespace-nowrap"
                                     >
-                                        <td class="px-3 py-2.5">
-                                            <span
-                                                class="inline-flex items-center gap-2"
-                                            >
-                                                <Avatar
-                                                    class="size-6 overflow-hidden rounded-full"
-                                                >
-                                                    <AvatarImage
-                                                        v-if="player.avatar"
-                                                        :src="player.avatar"
-                                                        :alt="player.name"
-                                                    />
-                                                    <AvatarFallback
-                                                        class="text-[10px]"
-                                                    >
-                                                        {{
-                                                            getInitials(
-                                                                player.name,
-                                                            )
-                                                        }}
-                                                    </AvatarFallback>
-                                                </Avatar>
-                                                <span
-                                                    :class="
-                                                        player.pivot
-                                                            .eliminated_at
-                                                            ? 'text-muted-foreground line-through'
-                                                            : ''
-                                                    "
-                                                >
-                                                    {{ player.name }}
-                                                </span>
-                                            </span>
-                                        </td>
-                                        <td
-                                            v-for="day in days"
-                                            :key="day"
-                                            class="px-3 py-2.5 text-center tabular-nums"
-                                            :class="
-                                                historyCellClass(player.id, day)
-                                            "
+                                        {{ formatDay(day) }}
+                                    </th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr
+                                    v-for="player in round.players"
+                                    :key="player.id"
+                                    class="border-t"
+                                >
+                                    <td class="px-3 py-2.5">
+                                        <span
+                                            class="inline-flex items-center gap-2"
                                         >
-                                            {{ cell(player.id, day) }}
-                                        </td>
-                                    </tr>
-                                </tbody>
-                            </table>
-                        </div>
+                                            <Avatar
+                                                class="size-6 overflow-hidden rounded-full"
+                                            >
+                                                <AvatarImage
+                                                    v-if="player.avatar"
+                                                    :src="player.avatar"
+                                                    :alt="player.name"
+                                                />
+                                                <AvatarFallback
+                                                    class="text-[10px]"
+                                                >
+                                                    {{
+                                                        getInitials(player.name)
+                                                    }}
+                                                </AvatarFallback>
+                                            </Avatar>
+                                            <span
+                                                :class="
+                                                    player.pivot.eliminated_at
+                                                        ? 'text-muted-foreground line-through'
+                                                        : ''
+                                                "
+                                            >
+                                                {{ player.name }}
+                                            </span>
+                                        </span>
+                                    </td>
+                                    <td
+                                        v-for="day in days"
+                                        :key="day"
+                                        class="px-3 py-2.5 text-center tabular-nums"
+                                        :class="
+                                            historyCellClass(player.id, day)
+                                        "
+                                    >
+                                        {{ cell(player.id, day) }}
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
 
-                        <ChipTrendChart
-                            v-else
-                            :players="round.players"
-                            :snapshots="snapshots"
-                        />
-                    </template>
+                    <p v-else class="text-sm text-muted-foreground">
+                        Nenhum dia registrado.
+                    </p>
+                </CardContent>
+            </Card>
+
+            <Card class="min-w-0">
+                <CardHeader>
+                    <CardTitle>Evolução</CardTitle>
+                    <CardDescription>
+                        Fichas por jogador ao longo dos dias registrados.
+                    </CardDescription>
+                </CardHeader>
+
+                <CardContent class="flex-1">
+                    <ChipTrendChart
+                        v-if="days.length"
+                        :players="round.players"
+                        :snapshots="snapshots"
+                    />
 
                     <p v-else class="text-sm text-muted-foreground">
                         Nenhum dia registrado.
