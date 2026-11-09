@@ -614,7 +614,7 @@ const submit = (): void => {
                             Soma {{ formatChips(sum) }} /
                             {{ formatChips(round.total_chips) }} fichas
                             <span v-if="!sumMatches">
-                                · precisa fechar antes de registrar · diferença de ({{ formatChips(sum) }} - {{ formatChips(round.total_chips) }}) fichas
+                                · precisa fechar antes de registrar · diferença de {{ formatChips(sum - round.total_chips) }} fichas
                             </span>
                         </p>
                         <Button
