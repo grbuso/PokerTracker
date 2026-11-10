@@ -10,6 +10,7 @@ use App\Models\ChipSubmission;
 use App\Models\Round;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -71,12 +72,14 @@ class RoundController extends Controller
             'chips.*' => ['required', 'integer', 'min:0'],
         ]);
 
+        $recordedOn = Carbon::parse($data['recorded_on'])->toDateString();
+
         $activeIds = $round->players()
             ->wherePivotNull('eliminated_at')
             ->pluck('users.id')
             ->all();
 
-        DB::transaction(function () use ($data, $round, $activeIds) {
+        DB::transaction(function () use ($recordedOn, $data, $round, $activeIds) {
             foreach ($data['chips'] as $userId => $chips) {
                 if (! in_array((int) $userId, $activeIds)) {
                     continue;
@@ -86,20 +89,20 @@ class RoundController extends Controller
                     [
                         'round_id' => $round->id,
                         'user_id' => $userId,
-                        'recorded_on' => $data['recorded_on'],
+                        'recorded_on' => $recordedOn,
                     ],
                     ['chips' => $chips],
                 );
 
                 $round->players()->updateExistingPivot($userId, [
                     'chips' => $chips,
-                    'eliminated_at' => $chips === 0 ? $data['recorded_on'] : null,
+                    'eliminated_at' => $chips === 0 ? $recordedOn : null,
                 ]);
             }
 
             ChipSubmission::query()
                 ->where('round_id', $round->id)
-                ->whereDate('recorded_on', $data['recorded_on'])
+                ->whereDate('recorded_on', $recordedOn)
                 ->whereNull('registered_at')
                 ->update(['registered_at' => now()]);
         });

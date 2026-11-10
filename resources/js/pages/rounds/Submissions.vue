@@ -91,7 +91,7 @@ const parseChipAmount = (value: string): number => {
 };
 
 const isoToDisplay = (iso: string): string => {
-    const [year, month, day] = iso.split('-');
+    const [year, month, day] = iso.slice(0, 10).split('-');
 
     return year && month && day ? `${day}/${month}/${year}` : '';
 };
@@ -130,7 +130,7 @@ const maskDate = (value: string): string => {
 };
 
 const form = useForm({
-    recorded_on: props.selectedDate,
+    recorded_on: props.selectedDate.slice(0, 10),
     chips: {} as Record<number, number>,
 });
 
@@ -203,7 +203,7 @@ watch(
 
         chipCounts.value = counts;
         form.chips = chips;
-        form.recorded_on = props.selectedDate;
+        form.recorded_on = props.selectedDate.slice(0, 10);
     },
     { immediate: true },
 );
@@ -258,7 +258,7 @@ const chipFormatter = new Intl.NumberFormat('pt-BR');
 const formatChips = (chips: number): string => chipFormatter.format(chips);
 
 const formatDay = (day: string): string => {
-    const [, month, date] = day.split('-');
+    const [, month, date] = day.slice(0, 10).split('-');
 
     return month && date ? `${date}/${month}` : day;
 };
@@ -345,6 +345,13 @@ const submit = (): void => {
 
     form.post(RoundController.storeSnapshot.url(props.round.id), {
         preserveScroll: true,
+        onSuccess: () => {
+            router.get(
+                submissionsIndex.url(props.round.id),
+                {},
+                { replace: true },
+            );
+        },
     });
 };
 </script>
@@ -418,7 +425,7 @@ const submit = (): void => {
                                 type="date"
                                 tabindex="-1"
                                 aria-hidden="true"
-                                :value="selectedDate"
+                                :value="selectedDate.slice(0, 10)"
                                 class="pointer-events-none absolute inset-0 h-full w-full [color-scheme:light] opacity-0 dark:[color-scheme:dark]"
                                 @change="onDatePicked"
                             />
@@ -437,7 +444,7 @@ const submit = (): void => {
                         v-if="dates.length"
                         class="flex flex-wrap items-center gap-1 pb-2 text-xs text-muted-foreground"
                     >
-                        <span>Com envios:</span>
+                        <span>Dias com envios pendentes:</span>
                         <Link
                             v-for="day in dates"
                             :key="day"

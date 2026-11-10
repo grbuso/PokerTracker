@@ -2,8 +2,10 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Support\Carbon;
 
 class ChipSnapshot extends Model
 {
@@ -17,6 +19,16 @@ class ChipSnapshot extends Model
         return [
             'chips' => 'integer',
         ];
+    }
+
+    /**
+     * @return Attribute<string, string>
+     */
+    protected function recordedOn(): Attribute
+    {
+        return Attribute::make(
+            set: fn (string $value): string => Carbon::parse($value)->toDateString(),
+        );
     }
 
     /**

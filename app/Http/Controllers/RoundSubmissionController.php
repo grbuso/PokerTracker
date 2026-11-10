@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\ChipSubmission;
 use App\Models\Round;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -22,11 +23,20 @@ class RoundSubmissionController extends Controller
             ->distinct()
             ->orderByDesc('recorded_on')
             ->pluck('recorded_on')
+            ->map(fn ($date): string => Carbon::parse($date)->toDateString())
             ->values();
 
-        $selectedDate = $request->query('date')
-            ?? $dates->first()
-            ?? today()->toDateString();
+        $selectedDate = $dates->first() ?? today()->toDateString();
+
+        $requestedDate = $request->query('date');
+
+        if (is_string($requestedDate) && $requestedDate !== '') {
+            try {
+                $selectedDate = Carbon::parse($requestedDate)->toDateString();
+            } catch (\Throwable) {
+                // Mantém a data padrão quando o valor da query é inválido.
+            }
+        }
 
         $submissions = ChipSubmission::query()
             ->where('round_id', $round->id)

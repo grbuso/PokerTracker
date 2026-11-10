@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Database\Factories\ChipSubmissionFactory;
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -43,12 +44,22 @@ class ChipSubmission extends Model
     protected function casts(): array
     {
         return [
-            'recorded_on' => 'date',
             'chips' => 'integer',
             'chip_counts' => 'array',
             'submitted_at' => 'datetime',
             'registered_at' => 'datetime',
         ];
+    }
+
+    /**
+     * @return Attribute<Carbon, string>
+     */
+    protected function recordedOn(): Attribute
+    {
+        return Attribute::make(
+            get: fn (string $value): Carbon => Carbon::parse($value),
+            set: fn (string $value): string => Carbon::parse($value)->toDateString(),
+        );
     }
 
     /**
