@@ -3,6 +3,9 @@ import { Head, Link, router } from '@inertiajs/vue3';
 import {
     ArrowLeft,
     CalendarDays,
+    ChevronDown,
+    ChevronsUpDown,
+    ChevronUp,
     CircleDollarSign,
     Clock,
     Coins,
@@ -100,19 +103,6 @@ const days = computed(() => [
     ),
 ]);
 
-const cell = (userId: number, day: string): string => {
-    const snapshot = props.snapshots.find(
-        (item) =>
-            item.user_id === userId && toDateKey(item.recorded_on) === day,
-    );
-
-    if (!snapshot) {
-        return '—';
-    }
-
-    return snapshot.chips === 0 ? 'Eliminado' : String(snapshot.chips);
-};
-
 const historyCellClass = (userId: number, day: string): string => {
     const snapshot = props.snapshots.find(
         (item) =>
@@ -183,6 +173,79 @@ const closeRound = () => {
 const deleteRound = () => {
     deleteOpen.value = false;
     router.delete(RoundController.destroy.url(props.round.id));
+};
+
+// Sort history
+const sortKey = ref<string | null>(null);
+const sortDir = ref<'asc' | 'desc'>('asc');
+
+function toggleSort(key: string) {
+    if (sortKey.value !== key) {
+        sortKey.value = key;
+        sortDir.value = key === 'name' ? 'asc' : 'desc';
+    } else if (sortDir.value === (key === 'name' ? 'asc' : 'desc')) {
+        sortDir.value = key === 'name' ? 'desc' : 'asc';
+    } else {
+        sortKey.value = null;
+    }
+}
+
+function sortIcon(key: string) {
+    if (sortKey.value !== key) return ChevronsUpDown;
+    return sortDir.value === 'asc' ? ChevronUp : ChevronDown;
+}
+
+const sortedPlayers = computed(() => {
+    const players = [...props.round.players];
+    const key = sortKey.value;
+
+    if (!key) {
+        return players;
+    }
+
+    const dir = sortDir.value === 'asc' ? 1 : -1;
+
+    return players.sort((a, b) => {
+        if (key === 'name') {
+            return a.name.localeCompare(b.name, 'pt-BR') * dir;
+        }
+
+        const av = chipsAt(a.id, key);
+        const bv = chipsAt(b.id, key);
+
+        if (av === null && bv === null) {
+            return a.name.localeCompare(b.name, 'pt-BR');
+        }
+
+        if (av === null) {
+            return 1;
+        }
+
+        if (bv === null) {
+            return -1;
+        }
+
+        return (av - bv) * dir || a.name.localeCompare(b.name, 'pt-BR');
+    });
+});
+
+function chipsAt(userId: number, day: string): number | null {
+    const snapshot = props.snapshots.find(
+        (item) =>
+            item.user_id === userId && toDateKey(item.recorded_on) === day,
+    );
+
+    return snapshot ? snapshot.chips : null;
+}
+
+const cell = (userId: number, day: string): string => {
+    const chips = chipsAt(userId, day);
+
+    if (chips === null) {
+        return '—';
+    }
+
+    return chips === 0 ? 'Eliminado' : String(chips);
 };
 </script>
 
@@ -432,20 +495,40 @@ const deleteRound = () => {
                             >
                                 <tr>
                                     <th class="px-3 py-2.5 font-medium">
-                                        Jogador
+                                        <button
+                                            type="button"
+                                            class="inline-flex items-center gap-1 uppercase hover:text-foreground"
+                                            @click="toggleSort('name')"
+                                        >
+                                            Jogador
+                                            <component
+                                                :is="sortIcon('name')"
+                                                class="size-3"
+                                            />
+                                        </button>
                                     </th>
                                     <th
                                         v-for="day in days"
                                         :key="day"
                                         class="px-3 py-2.5 text-center font-medium whitespace-nowrap"
                                     >
-                                        {{ formatShortDate(day) }}
+                                        <button
+                                            type="button"
+                                            class="inline-flex items-center gap-1 uppercase hover:text-foreground"
+                                            @click="toggleSort(day)"
+                                        >
+                                            {{ formatShortDate(day) }}
+                                            <component
+                                                :is="sortIcon(day)"
+                                                class="size-3"
+                                            />
+                                        </button>
                                     </th>
                                 </tr>
                             </thead>
                             <tbody>
                                 <tr
-                                    v-for="player in round.players"
+                                    v-for="player in sortedPlayers"
                                     :key="player.id"
                                     class="border-t"
                                 >
