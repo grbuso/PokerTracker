@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Head, Link, router, useForm } from '@inertiajs/vue3';
-import { ArrowLeft, CalendarDays, Inbox } from '@lucide/vue';
+import { ArrowLeft, CalendarDays, Inbox, X } from '@lucide/vue';
 import { computed, ref, watch } from 'vue';
 import RoundController from '@/actions/App/Http/Controllers/RoundController';
 import InputError from '@/components/InputError.vue';
@@ -14,9 +14,22 @@ import {
     CardHeader,
     CardTitle,
 } from '@/components/ui/card';
+import {
+    Dialog,
+    DialogClose,
+    DialogContent,
+    DialogDescription,
+    DialogFooter,
+    DialogHeader,
+    DialogTitle,
+} from '@/components/ui/dialog';
 import { getInitials } from '@/composables/useInitials';
+import { formatDate, formatShortDate, toDateKey } from '@/lib/dates';
 import { show as roundShow } from '@/routes/rounds';
-import { index as submissionsIndex } from '@/routes/rounds/submissions';
+import {
+    destroy as submissionsDestroy,
+    index as submissionsIndex,
+} from '@/routes/rounds/submissions';
 
 type Player = {
     id: number;
@@ -90,12 +103,6 @@ const parseChipAmount = (value: string): number => {
     return Number.isFinite(parsed) ? Math.max(0, Math.trunc(parsed)) : 0;
 };
 
-const isoToDisplay = (iso: string): string => {
-    const [year, month, day] = iso.slice(0, 10).split('-');
-
-    return year && month && day ? `${day}/${month}/${year}` : '';
-};
-
 const displayToIso = (display: string): string => {
     const match = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(display);
 
@@ -130,13 +137,13 @@ const maskDate = (value: string): string => {
 };
 
 const form = useForm({
-    recorded_on: props.selectedDate.slice(0, 10),
+    recorded_on: toDateKey(props.selectedDate),
     chips: {} as Record<number, number>,
 });
 
 const chipCounts = ref<Record<number, Record<number, number>>>({});
 
-const selectedDateDisplay = ref(isoToDisplay(props.selectedDate));
+const selectedDateDisplay = ref(formatDate(props.selectedDate));
 
 const dateInput = ref<HTMLInputElement | null>(null);
 
@@ -203,7 +210,7 @@ watch(
 
         chipCounts.value = counts;
         form.chips = chips;
-        form.recorded_on = props.selectedDate.slice(0, 10);
+        form.recorded_on = toDateKey(props.selectedDate);
     },
     { immediate: true },
 );
@@ -257,12 +264,6 @@ const canRegister = computed(
 const chipFormatter = new Intl.NumberFormat('pt-BR');
 const formatChips = (chips: number): string => chipFormatter.format(chips);
 
-const formatDay = (day: string): string => {
-    const [, month, date] = day.slice(0, 10).split('-');
-
-    return month && date ? `${date}/${month}` : day;
-};
-
 const formatTime = (value: string | null): string | null => {
     if (!value) {
         return null;
@@ -289,7 +290,7 @@ const sourceLabel = (userId: number): string => {
 watch(
     () => props.selectedDate,
     (value) => {
-        selectedDateDisplay.value = isoToDisplay(value);
+        selectedDateDisplay.value = formatDate(value);
     },
 );
 
@@ -322,7 +323,7 @@ const onDateInput = (event: Event): void => {
 const onDatePicked = (event: Event): void => {
     const target = event.target as HTMLInputElement;
 
-    selectedDateDisplay.value = isoToDisplay(target.value);
+    selectedDateDisplay.value = formatDate(target.value);
     navigateToDate(target.value);
 };
 
@@ -351,6 +352,34 @@ const submit = (): void => {
                 {},
                 { replace: true },
             );
+        },
+    });
+};
+
+const removalOpen = ref(false);
+const dateToRemove = ref<string | null>(null);
+
+const removalDateLabel = computed(() =>
+    dateToRemove.value ? formatDate(dateToRemove.value) : '',
+);
+
+const requestRemoveDate = (date: string): void => {
+    dateToRemove.value = toDateKey(date);
+    removalOpen.value = true;
+};
+
+const confirmRemoveDate = (): void => {
+    const date = dateToRemove.value;
+
+    if (!date) {
+        return;
+    }
+
+    router.delete(submissionsDestroy.url(props.round.id, { query: { date } }), {
+        preserveScroll: true,
+        onFinish: () => {
+            removalOpen.value = false;
+            dateToRemove.value = null;
         },
     });
 };
@@ -425,7 +454,7 @@ const submit = (): void => {
                                 type="date"
                                 tabindex="-1"
                                 aria-hidden="true"
-                                :value="selectedDate.slice(0, 10)"
+                                :value="toDateKey(selectedDate)"
                                 class="pointer-events-none absolute inset-0 h-full w-full [color-scheme:light] opacity-0 dark:[color-scheme:dark]"
                                 @change="onDatePicked"
                             />
@@ -445,23 +474,35 @@ const submit = (): void => {
                         class="flex flex-wrap items-center gap-1 pb-2 text-xs text-muted-foreground"
                     >
                         <span>Dias com envios pendentes:</span>
-                        <Link
+                        <span
                             v-for="day in dates"
                             :key="day"
-                            :href="
-                                submissionsIndex.url(round.id, {
-                                    query: { date: day },
-                                })
-                            "
-                            class="rounded-md border px-2 py-1 tabular-nums transition-colors hover:bg-muted"
+                            class="inline-flex items-stretch overflow-hidden rounded-md border transition-colors"
                             :class="
                                 day === selectedDate
                                     ? 'border-primary/40 bg-primary/10 text-foreground'
                                     : ''
                             "
                         >
-                            {{ formatDay(day) }}
-                        </Link>
+                            <Link
+                                :href="
+                                    submissionsIndex.url(round.id, {
+                                        query: { date: day },
+                                    })
+                                "
+                                class="px-2 py-1 tabular-nums transition-colors hover:bg-muted"
+                            >
+                                {{ formatShortDate(day) }}
+                            </Link>
+                            <button
+                                type="button"
+                                class="flex items-center border-l border-border/60 px-1.5 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
+                                :aria-label="`Remover envios de ${formatShortDate(day)}`"
+                                @click="requestRemoveDate(day)"
+                            >
+                                <X class="size-3" />
+                            </button>
+                        </span>
                     </div>
                 </div>
             </CardHeader>
@@ -621,7 +662,10 @@ const submit = (): void => {
                             Soma {{ formatChips(sum) }} /
                             {{ formatChips(round.total_chips) }} fichas
                             <span v-if="!sumMatches">
-                                · precisa fechar antes de registrar · diferença de {{ formatChips(sum - round.total_chips) }} fichas
+                                · precisa fechar antes de registrar · diferença
+                                de
+                                {{ formatChips(sum - round.total_chips) }}
+                                fichas
                             </span>
                         </p>
                         <Button
@@ -644,5 +688,28 @@ const submit = (): void => {
                 </p>
             </CardContent>
         </Card>
+
+        <Dialog v-model:open="removalOpen">
+            <DialogContent>
+                <DialogHeader>
+                    <DialogTitle>
+                        Remover os envios de {{ removalDateLabel }}?
+                    </DialogTitle>
+                    <DialogDescription>
+                        Os envios pendentes desse dia serão descartados. Os dias
+                        já registrados no histórico não serão alterados. Essa
+                        ação não pode ser desfeita.
+                    </DialogDescription>
+                </DialogHeader>
+                <DialogFooter>
+                    <DialogClose as-child>
+                        <Button variant="outline">Cancelar</Button>
+                    </DialogClose>
+                    <Button variant="destructive" @click="confirmRemoveDate">
+                        Remover
+                    </Button>
+                </DialogFooter>
+            </DialogContent>
+        </Dialog>
     </div>
 </template>

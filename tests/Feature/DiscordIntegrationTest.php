@@ -5,6 +5,7 @@ use App\Models\Round;
 use App\Models\User;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Testing\TestResponse;
 
 beforeEach(function () {
@@ -112,6 +113,81 @@ test('a modal submission stages the chip counts for the active round', function 
         ->and($submission->chip_counts)->toBe([100 => 2, 50 => 3, 25 => 0, 10 => 0, 5 => 0])
         ->and($submission->source)->toBe('discord')
         ->and($submission->registered_at)->toBeNull();
+});
+
+test('submitting the modal again updates the same day submission', function () {
+    $player = User::factory()->create(['discord_id' => 'discord-1']);
+    $round = Round::factory()->create([
+        'starts_on' => '2026-11-01',
+        'total_chips' => 1000,
+        'status' => 'ativa',
+    ]);
+    $round->players()->attach($player->id, ['chips' => 1000]);
+
+    $payload = fn (string $hundreds): array => [
+        'type' => 5,
+        'channel_id' => 'channel-1',
+        'member' => ['user' => ['id' => 'discord-1']],
+        'data' => [
+            'custom_id' => 'chips_modal',
+            'components' => [
+                ['type' => 1, 'components' => [['custom_id' => 'chips_100', 'value' => $hundreds]]],
+                ['type' => 1, 'components' => [['custom_id' => 'chips_50', 'value' => '0']]],
+                ['type' => 1, 'components' => [['custom_id' => 'chips_25', 'value' => '0']]],
+                ['type' => 1, 'components' => [['custom_id' => 'chips_10', 'value' => '0']]],
+                ['type' => 1, 'components' => [['custom_id' => 'chips_5', 'value' => '0']]],
+            ],
+        ],
+    ];
+
+    ($this->postDiscord)($payload('2'))->assertOk();
+    ($this->postDiscord)($payload('3'))->assertOk();
+
+    expect(ChipSubmission::query()->count())->toBe(1)
+        ->and(ChipSubmission::query()->first()->chips)->toBe(300);
+});
+
+test('resending after a legacy datetime submission updates instead of failing', function () {
+    $player = User::factory()->create(['discord_id' => 'discord-1']);
+    $round = Round::factory()->create([
+        'starts_on' => '2026-11-01',
+        'total_chips' => 1000,
+        'status' => 'ativa',
+    ]);
+    $round->players()->attach($player->id, ['chips' => 1000]);
+
+    DB::table('chip_submissions')->insert([
+        'round_id' => $round->id,
+        'user_id' => $player->id,
+        'recorded_on' => '2026-11-06 00:00:00',
+        'chips' => 200,
+        'chip_counts' => json_encode([100 => 2, 50 => 0, 25 => 0, 10 => 0, 5 => 0]),
+        'source' => 'discord',
+        'submitted_at' => now(),
+        'registered_at' => null,
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+
+    ($this->postDiscord)([
+        'type' => 5,
+        'channel_id' => 'channel-1',
+        'member' => ['user' => ['id' => 'discord-1']],
+        'data' => [
+            'custom_id' => 'chips_modal',
+            'components' => [
+                ['type' => 1, 'components' => [['custom_id' => 'chips_100', 'value' => '3']]],
+                ['type' => 1, 'components' => [['custom_id' => 'chips_50', 'value' => '0']]],
+                ['type' => 1, 'components' => [['custom_id' => 'chips_25', 'value' => '0']]],
+                ['type' => 1, 'components' => [['custom_id' => 'chips_10', 'value' => '0']]],
+                ['type' => 1, 'components' => [['custom_id' => 'chips_5', 'value' => '0']]],
+            ],
+        ],
+    ])->assertOk();
+
+    expect(ChipSubmission::query()->count())->toBe(1)
+        ->and(ChipSubmission::query()->first()->chips)->toBe(300)
+        ->and(DB::table('chip_submissions')->value('recorded_on'))->toBe('2026-11-06');
 });
 
 test('the vincular command links the discord account to the user', function () {

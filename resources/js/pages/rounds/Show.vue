@@ -38,6 +38,7 @@ import {
     DialogTitle,
 } from '@/components/ui/dialog';
 import { getInitials } from '@/composables/useInitials';
+import { formatShortDate, toDateKey } from '@/lib/dates';
 import { dashboard } from '@/routes';
 
 type Player = {
@@ -94,12 +95,15 @@ const statusClass = computed(() =>
 );
 
 const days = computed(() => [
-    ...new Set(props.snapshots.map((snapshot) => snapshot.recorded_on)),
+    ...new Set(
+        props.snapshots.map((snapshot) => toDateKey(snapshot.recorded_on)),
+    ),
 ]);
 
 const cell = (userId: number, day: string): string => {
     const snapshot = props.snapshots.find(
-        (item) => item.user_id === userId && item.recorded_on === day,
+        (item) =>
+            item.user_id === userId && toDateKey(item.recorded_on) === day,
     );
 
     if (!snapshot) {
@@ -111,16 +115,11 @@ const cell = (userId: number, day: string): string => {
 
 const historyCellClass = (userId: number, day: string): string => {
     const snapshot = props.snapshots.find(
-        (item) => item.user_id === userId && item.recorded_on === day,
+        (item) =>
+            item.user_id === userId && toDateKey(item.recorded_on) === day,
     );
 
     return snapshot && snapshot.chips > 0 ? '' : 'text-muted-foreground';
-};
-
-const formatDay = (day: string): string => {
-    const [, month, date] = day.split('-');
-
-    return month && date ? `${date}/${month}` : day;
 };
 
 const chipFormatter = new Intl.NumberFormat('pt-BR');
@@ -156,7 +155,7 @@ const leader = computed(() => {
 const lastSnapshotOn = computed(() => {
     const last = days.value[days.value.length - 1];
 
-    return last ? formatDay(last) : null;
+    return last ? formatShortDate(last) : null;
 });
 
 const roundCreatedOn = computed(() => {
@@ -440,7 +439,7 @@ const deleteRound = () => {
                                         :key="day"
                                         class="px-3 py-2.5 text-center font-medium whitespace-nowrap"
                                     >
-                                        {{ formatDay(day) }}
+                                        {{ formatShortDate(day) }}
                                     </th>
                                 </tr>
                             </thead>

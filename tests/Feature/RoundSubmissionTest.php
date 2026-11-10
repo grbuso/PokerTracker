@@ -121,6 +121,47 @@ test('registering a day accepts a datetime and still marks submissions as regist
         ->toBe('2026-11-06');
 });
 
+test('administrators can discard the pending submissions of a date', function () {
+    $admin = User::factory()->admin()->create();
+    $player = User::factory()->create();
+    $round = Round::factory()->create([
+        'starts_on' => '2026-11-01',
+        'total_chips' => 1000,
+        'status' => 'ativa',
+    ]);
+    $round->players()->attach($player->id, ['chips' => 1000]);
+
+    $pending = ChipSubmission::factory()->create([
+        'round_id' => $round->id,
+        'user_id' => $player->id,
+        'recorded_on' => '2026-11-06',
+        'registered_at' => null,
+    ]);
+
+    $registered = ChipSubmission::factory()->create([
+        'round_id' => $round->id,
+        'user_id' => $player->id,
+        'recorded_on' => '2026-11-05',
+        'registered_at' => now(),
+    ]);
+
+    $this->actingAs($admin)
+        ->delete(route('rounds.submissions.destroy', [
+            'round' => $round,
+            'date' => '2026-11-06',
+        ]))
+        ->assertRedirect(route('rounds.submissions.index', $round));
+
+    expect($pending->fresh())->toBeNull()
+        ->and($registered->fresh())->not->toBeNull();
+
+    $this->actingAs($admin)
+        ->get(route('rounds.submissions.index', $round))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('dates', [])
+        );
+});
+
 test('submissions are stored date-only and can be updated on the same day', function () {
     $player = User::factory()->create();
     $round = Round::factory()->create();

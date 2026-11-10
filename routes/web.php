@@ -35,6 +35,9 @@ Route::middleware(['auth', 'verified', 'can:manage-game'])->group(function () {
     Route::get('rounds/{round}/submissions', [RoundSubmissionController::class, 'index'])
         ->whereNumber('round')
         ->name('rounds.submissions.index');
+    Route::delete('rounds/{round}/submissions', [RoundSubmissionController::class, 'destroy'])
+        ->whereNumber('round')
+        ->name('rounds.submissions.destroy');
 
     Route::resource('admin/players', PlayerController::class)
         ->except(['show', 'create', 'edit'])

@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\ChipSubmission;
 use App\Models\Round;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Inertia\Inertia;
@@ -50,5 +51,29 @@ class RoundSubmissionController extends Controller
             'selectedDate' => $selectedDate,
             'submissions' => $submissions,
         ]);
+    }
+
+    public function destroy(Request $request, Round $round): RedirectResponse
+    {
+        $data = $request->validate([
+            'date' => ['required', 'date'],
+        ]);
+
+        $date = Carbon::parse($data['date'])->toDateString();
+
+        $deleted = ChipSubmission::query()
+            ->where('round_id', $round->id)
+            ->whereDate('recorded_on', $date)
+            ->whereNull('registered_at')
+            ->delete();
+
+        Inertia::flash('toast', [
+            'type' => $deleted > 0 ? 'success' : 'error',
+            'message' => $deleted > 0
+                ? __('Envios pendentes do dia removidos.')
+                : __('Não há envios pendentes nesse dia.'),
+        ]);
+
+        return to_route('rounds.submissions.index', $round);
     }
 }

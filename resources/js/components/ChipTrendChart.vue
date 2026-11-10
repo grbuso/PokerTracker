@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { getInitials } from '@/composables/useInitials';
+import { formatShortDate, toDateKey } from '@/lib/dates';
 
 type ChartPlayer = {
     id: number;
@@ -53,15 +54,11 @@ const chipFormatter = new Intl.NumberFormat('pt-BR');
 
 const formatChips = (chips: number): string => chipFormatter.format(chips);
 
-const formatDay = (day: string): string => {
-    const [, month, date] = day.split('-');
-
-    return month && date ? `${date}/${month}` : day;
-};
-
 const days = computed(() =>
     [
-        ...new Set(props.snapshots.map((snapshot) => snapshot.recorded_on)),
+        ...new Set(
+            props.snapshots.map((snapshot) => toDateKey(snapshot.recorded_on)),
+        ),
     ].sort(),
 );
 
@@ -123,12 +120,13 @@ const series = computed(() => {
                 first.recorded_on.localeCompare(second.recorded_on),
             )
             .map((snapshot) => {
-                const dayIndex = dayIndexes.get(snapshot.recorded_on) ?? 0;
+                const dayIndex =
+                    dayIndexes.get(toDateKey(snapshot.recorded_on)) ?? 0;
 
                 return {
                     x: xFor(dayIndex),
                     y: yFor(snapshot.chips),
-                    day: snapshot.recorded_on,
+                    day: toDateKey(snapshot.recorded_on),
                     chips: snapshot.chips,
                 };
             });
@@ -177,7 +175,7 @@ const tooltipDetail = computed(() => {
     const point = hoveredPoint.value;
 
     return point
-        ? `${formatDay(point.day)} · ${formatChips(point.chips)} fichas`
+        ? `${formatShortDate(point.day)} · ${formatChips(point.chips)} fichas`
         : '';
 });
 
@@ -254,7 +252,7 @@ const tooltipPosition = computed(() => {
                     font-size="10"
                     class="fill-muted-foreground"
                 >
-                    {{ formatDay(day) }}
+                    {{ formatShortDate(day) }}
                 </text>
 
                 <g v-for="item in series" :key="item.id">
@@ -297,7 +295,7 @@ const tooltipPosition = computed(() => {
                         class="cursor-pointer outline-none"
                         role="img"
                         tabindex="0"
-                        :aria-label="`${item.name}, ${formatDay(point.day)}: ${formatChips(point.chips)} fichas`"
+                        :aria-label="`${item.name}, ${formatShortDate(point.day)}: ${formatChips(point.chips)} fichas`"
                         @mouseenter="showPoint(item, point)"
                         @mouseleave="hoveredPoint = null"
                         @focus="showPoint(item, point)"

@@ -51,7 +51,12 @@ class RoundController extends Controller
             'blinds' => $calculateBlinds->handle($round),
             'snapshots' => $round->snapshots()
                 ->orderBy('recorded_on')
-                ->get(['user_id', 'recorded_on', 'chips']),
+                ->get(['user_id', 'recorded_on', 'chips'])
+                ->map(fn (ChipSnapshot $snapshot): array => [
+                    'user_id' => $snapshot->user_id,
+                    'recorded_on' => Carbon::parse($snapshot->recorded_on)->toDateString(),
+                    'chips' => $snapshot->chips,
+                ]),
         ]);
     }
 

@@ -83,6 +83,7 @@ class DiscordInteractionController extends Controller
             ->where('user_id', $user->id)
             ->whereDate('recorded_on', today()->toDateString())
             ->whereNull('registered_at')
+            ->latest('id')
             ->first();
 
         return $this->chipsModal($submission === null ? [] : ($submission->chip_counts ?? []));
@@ -171,25 +172,52 @@ class DiscordInteractionController extends Controller
 
         $total = $this->totalFromCounts($counts);
 
-        ChipSubmission::query()->updateOrCreate(
-            [
-                'round_id' => $round->id,
-                'user_id' => $user->id,
-                'recorded_on' => today()->toDateString(),
-            ],
-            [
-                'chips' => $total,
-                'chip_counts' => $counts,
-                'source' => 'discord',
-                'submitted_at' => now(),
-                'registered_at' => null,
-            ],
-        );
+        try {
+            $this->stageSubmission($round, $user, today()->toDateString(), $counts, $total);
+        } catch (\Throwable $exception) {
+            report($exception);
+
+            return $this->ephemeral(__('Não foi possível salvar suas fichas agora. Tente novamente em instantes.'));
+        }
 
         return $this->ephemeral(__('Fichas enviadas: :breakdown = :total fichas. Aguardando o registro do dia.', [
             'breakdown' => $this->breakdown($counts),
             'total' => number_format($total, 0, ',', '.'),
         ]));
+    }
+
+    /**
+     * Creates or updates the pending submission of the day.
+     *
+     * @param  array<int, int>  $counts
+     */
+    private function stageSubmission(Round $round, User $user, string $date, array $counts, int $total): void
+    {
+        $submission = ChipSubmission::query()
+            ->where('round_id', $round->id)
+            ->where('user_id', $user->id)
+            ->whereDate('recorded_on', $date)
+            ->latest('id')
+            ->first();
+
+        $submission ??= new ChipSubmission([
+            'round_id' => $round->id,
+            'user_id' => $user->id,
+        ]);
+
+        // Mantém sempre a data pura (Y-m-d), mesmo quando a linha existente foi
+        // gravada por uma versão antiga com data e hora.
+        $submission->recorded_on = $date;
+
+        $submission->fill([
+            'chips' => $total,
+            'chip_counts' => $counts,
+            'source' => 'discord',
+            'submitted_at' => now(),
+            'registered_at' => null,
+        ]);
+
+        $submission->save();
     }
 
     /**
