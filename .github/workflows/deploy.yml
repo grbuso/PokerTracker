@@ -1,4 +1,4 @@
-name: Deploy
+name: Deploy 
 
 on:
   push:
@@ -8,15 +8,12 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    
+
     steps:
-      - name: Deploy via SSH
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.SSH_HOST }}
-          username: ${{ secrets.SSH_USERNAME }}
-          key: ${{ secrets.SSH_KEY }}
-          script: |
-            cd /opt/projects/PokerTracker
-            git pull
-            docker compose up -d --build
+      - name: Install sshpass
+        run: sudo apt-get install sshpass
+
+      - name: Deploy to remote server
+        run: |
+          sshpass -p ${{ secrets.SSH_PASSWORD }} ssh -p 22 -o StrictHostKeyChecking=no ${{ secrets.SSH_USERNAME }}@${{ secrets.SSH_HOST }} \
+          "cd /opt/projects/PokerTracker && git pull origin master && docker compose up -d --build > /dev/null 2>&1 < /dev/null &"
