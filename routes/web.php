@@ -3,6 +3,7 @@
 use App\Http\Controllers\Admin\PlayerController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DiscordInteractionController;
+use App\Http\Controllers\PlayerProfileController;
 use App\Http\Controllers\RoundController;
 use App\Http\Controllers\RoundSubmissionController;
 use Illuminate\Support\Facades\Route;
@@ -18,6 +19,10 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('rounds/{round}', [RoundController::class, 'show'])
         ->whereNumber('round')
         ->name('rounds.show');
+
+    Route::get('players/{player}', [PlayerProfileController::class, 'show'])
+        ->whereNumber('player')
+        ->name('players.show');
 });
 
 Route::middleware(['auth', 'verified', 'can:manage-game'])->group(function () {

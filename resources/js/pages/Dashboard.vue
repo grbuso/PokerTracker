@@ -39,6 +39,7 @@ import {
 import { Label } from '@/components/ui/label';
 import { getInitials } from '@/composables/useInitials';
 import { dashboard } from '@/routes';
+import PlayerProfileController from '@/actions/App/Http/Controllers/PlayerProfileController';
 
 type ActiveRound = {
     id: number;
@@ -588,7 +589,15 @@ const visitRound = (roundId: number) => {
                                                     }}
                                                 </AvatarFallback>
                                             </Avatar>
-                                            {{ entry.name }}
+                                            <Link
+                                                :href="
+                                                    PlayerProfileController.show.url(
+                                                        entry.id,
+                                                    )
+                                                "
+                                            >
+                                                {{ entry.name }}
+                                            </Link>
                                             <Trophy
                                                 v-if="isLeader(entry)"
                                                 class="size-3.5 text-primary"

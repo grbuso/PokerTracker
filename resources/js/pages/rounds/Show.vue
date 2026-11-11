@@ -6,11 +6,9 @@ import {
     ChevronDown,
     ChevronsUpDown,
     ChevronUp,
-    CircleDollarSign,
     Clock,
     Coins,
     Flag,
-    Gauge,
     Inbox,
     Trash2,
     TrendingUp,
@@ -25,7 +23,6 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
     Card,
-    CardAction,
     CardContent,
     CardDescription,
     CardHeader,
@@ -43,6 +40,7 @@ import {
 import { getInitials } from '@/composables/useInitials';
 import { formatShortDate, toDateKey } from '@/lib/dates';
 import { dashboard } from '@/routes';
+import PlayerProfileController from '@/actions/App/Http/Controllers/PlayerProfileController';
 
 type Player = {
     id: number;
@@ -559,7 +557,15 @@ const cell = (userId: number, day: string): string => {
                                                         : ''
                                                 "
                                             >
-                                                {{ player.name }}
+                                                <Link
+                                                    :href="
+                                                        PlayerProfileController.show.url(
+                                                            player.id,
+                                                        )
+                                                    "
+                                                >
+                                                    {{ player.name }}
+                                                </Link>
                                             </span>
                                         </span>
                                     </td>

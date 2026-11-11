@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Actions\DetermineRoundWinner;
 use App\Models\ChipSnapshot;
 use App\Models\Round;
 use App\Models\User;
@@ -13,7 +14,7 @@ use Inertia\Response;
 
 class DashboardController extends Controller
 {
-    public function index(Request $request): Response
+    public function index(Request $request, DetermineRoundWinner $determineWinner): Response
     {
         $rounds = Round::query()
             ->with(['players' => fn ($query) => $query->orderByDesc('round_user.chips')])
@@ -40,11 +41,11 @@ class DashboardController extends Controller
                 'total_chips' => $round->total_chips,
                 'status' => $round->status,
                 'players_count' => $round->players->count(),
-                'winner' => $this->winnerFor($round)?->name,
-                'winner_avatar' => $this->winnerFor($round)?->avatar,
-                'tie' => $this->isTie($round),
+                'winner' => $determineWinner->handle($round)?->name,
+                'winner_avatar' => $determineWinner->handle($round)?->avatar,
+                'tie' => $determineWinner->isTie($round),
             ])->values(),
-            'ranking' => $this->ranking($rounds),
+            'ranking' => $this->ranking($rounds, $determineWinner),
         ]);
     }
 
@@ -82,8 +83,10 @@ class DashboardController extends Controller
      * @param  Collection<int, Round>  $rounds
      * @return array<int, array<string, mixed>>
      */
-    private function ranking(Collection $rounds): array
-    {
+    private function ranking(
+        Collection $rounds,
+        DetermineRoundWinner $determineWinner,
+    ): array {
         $closedRounds = $rounds
             ->where('status', 'encerrada')
             ->sortByDesc('id')
@@ -93,7 +96,7 @@ class DashboardController extends Controller
         $winners = [];
 
         foreach ($closedRounds as $round) {
-            $winner = $this->winnerFor($round);
+            $winner = $determineWinner->handle($round);
 
             if ($winner === null) {
                 continue;
@@ -146,42 +149,5 @@ class DashboardController extends Controller
                 ?: $a['name'] <=> $b['name'])
             ->values()
             ->all();
-    }
-
-    private function winnerFor(Round $round): ?User
-    {
-        $topPlayers = $this->topPlayers($round);
-
-        return $topPlayers?->count() === 1 ? $topPlayers->first() : null;
-    }
-
-    private function isTie(Round $round): bool
-    {
-        return ($this->topPlayers($round)?->count() ?? 0) > 1;
-    }
-
-    /**
-     * @return Collection<int, User>|null
-     */
-    private function topPlayers(Round $round): ?Collection
-    {
-        if ($round->status !== 'encerrada' || $round->players->isEmpty()) {
-            return null;
-        }
-
-        $survivors = $round->players->filter(
-            fn (User $user) => $user->pivot->eliminated_at === null,
-        );
-
-        $candidates = $survivors->isNotEmpty() ? $survivors : $round->players;
-        $topChips = $candidates->max(fn (User $user) => (int) $user->pivot->chips);
-
-        if ($topChips === null || $topChips <= 0) {
-            return null;
-        }
-
-        return $candidates
-            ->filter(fn (User $user) => (int) $user->pivot->chips === $topChips)
-            ->values();
     }
 }
