@@ -22,7 +22,7 @@ import { computed, ref } from 'vue';
 import RoundController from '@/actions/App/Http/Controllers/RoundController';
 import RoundSubmissionController from '@/actions/App/Http/Controllers/RoundSubmissionController';
 import ChipTrendChart from '@/components/ChipTrendChart.vue';
-import RankingTrendChart from '@/components/RankingTrendChart.vue';
+import RankingTable from '@/components/RankingTable.vue';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -319,8 +319,8 @@ const deltaFor = (userId: number, day: string) => {
         icon: up ? ArrowUp : ArrowDown,
         amount: formatChips(Math.abs(delta.diff)),
         class: up
-            ? 'text-emerald-600 dark:text-emerald-400'
-            : 'text-red-600 dark:text-red-400',
+            ? 'text-emerald-700 dark:text-emerald-400'
+            : 'text-destructive',
     };
 };
 </script>
@@ -697,7 +697,7 @@ const deltaFor = (userId: number, day: string) => {
 
             <Card class="min-w-0">
                 <CardHeader>
-                    <CardTitle>Gráfico</CardTitle>
+                    <CardTitle>Evolução</CardTitle>
                     <CardDescription>
                         {{ days.length }}
                         {{
@@ -722,7 +722,7 @@ const deltaFor = (userId: number, day: string) => {
                                 @click="chartView = 'chips'"
                             >
                                 <ChartLine class="size-3.5" />
-                                <span class="hidden sm:inline">Fichas</span>
+                                <span class="hidden sm:inline">Gráfico</span>
                             </Button>
                             <Button
                                 type="button"
@@ -734,7 +734,7 @@ const deltaFor = (userId: number, day: string) => {
                                 @click="chartView = 'rank'"
                             >
                                 <ListOrdered class="size-3.5" />
-                                <span class="hidden sm:inline">Ranking</span>
+                                <span class="hidden sm:inline">Tabela</span>
                             </Button>
                         </div>
                     </CardAction>
@@ -747,7 +747,7 @@ const deltaFor = (userId: number, day: string) => {
                         :snapshots="snapshots"
                     />
 
-                    <RankingTrendChart
+                    <RankingTable
                         v-else-if="days.length"
                         :players="round.players"
                         :snapshots="snapshots"
