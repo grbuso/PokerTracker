@@ -65,18 +65,25 @@ const days = computed(() =>
 
 const chartPlayers = computed(() =>
     props.players.filter((player) =>
-        props.snapshots.some((snapshot) => snapshot.user_id === player.id),
+        props.snapshots.some(
+            (snapshot) => snapshot.user_id === player.id && snapshot.chips > 0,
+        ),
     ),
 );
 
 /**
  * rank por dia: 1 = quem tem mais fichas. Empates compartilham a posição
- * (ex.: dois líderes = 1º, 1º; o próximo = 3º).
+ * (ex.: dois líderes = 1º, 1º; o próximo = 3º). Jogadores eliminados
+ * (0 fichas) não entram no ranking daquele dia.
  */
 const ranks = computed(() => {
     const byDay = new Map<string, ChartSnapshot[]>();
 
     for (const snapshot of props.snapshots) {
+        if (snapshot.chips <= 0) {
+            continue;
+        }
+
         const day = toDateKey(snapshot.recorded_on);
         const entries = byDay.get(day) ?? [];
 
@@ -103,20 +110,10 @@ const ranks = computed(() => {
     return result;
 });
 
-const maxRank = computed(() => {
-    let highest = 1;
-
-    for (const daily of ranks.value.values()) {
-        for (const rank of daily.values()) {
-            highest = Math.max(highest, rank);
-        }
-    }
-
-    return highest;
-});
+const maxRank = computed(() => Math.max(1, props.players.length));
 
 const rankTicks = computed(() => {
-    const step = maxRank.value <= 6 ? 1 : Math.ceil(maxRank.value / 6);
+    const step = maxRank.value <= 10 ? 1 : Math.ceil(maxRank.value / 8);
     const ticks: number[] = [];
 
     for (let rank = 1; rank <= maxRank.value; rank += step) {
@@ -151,7 +148,10 @@ const series = computed(() => {
 
     return chartPlayers.value.map((player, playerIndex) => {
         const points = props.snapshots
-            .filter((snapshot) => snapshot.user_id === player.id)
+            .filter(
+                (snapshot) =>
+                    snapshot.user_id === player.id && snapshot.chips > 0,
+            )
             .sort((first, second) =>
                 toDateKey(first.recorded_on).localeCompare(
                     toDateKey(second.recorded_on),
@@ -255,7 +255,7 @@ const tooltipPosition = computed(() => {
             v-if="!series.length"
             class="flex h-48 items-center justify-center rounded-lg border border-dashed text-sm text-muted-foreground"
         >
-            Sem snapshots ainda. Salve o primeiro dia e as posições aparecem.
+            Sem posições para exibir. Registre fichas para ver o ranking.
         </div>
 
         <div v-else class="space-y-3">
