@@ -5,6 +5,7 @@ import {
     ArrowLeft,
     ArrowUp,
     CalendarDays,
+    ChartLine,
     ChevronDown,
     ChevronsUpDown,
     ChevronUp,
@@ -12,6 +13,7 @@ import {
     Coins,
     Flag,
     Inbox,
+    ListOrdered,
     Trash2,
     TrendingUp,
     Trophy,
@@ -20,11 +22,13 @@ import { computed, ref } from 'vue';
 import RoundController from '@/actions/App/Http/Controllers/RoundController';
 import RoundSubmissionController from '@/actions/App/Http/Controllers/RoundSubmissionController';
 import ChipTrendChart from '@/components/ChipTrendChart.vue';
+import RankingTrendChart from '@/components/RankingTrendChart.vue';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
     Card,
+    CardAction,
     CardContent,
     CardDescription,
     CardHeader,
@@ -173,6 +177,7 @@ const roundCreatedOn = computed(() => {
 
 const closeOpen = ref(false);
 const deleteOpen = ref(false);
+const chartView = ref<'chips' | 'rank'>('chips');
 
 const closeRound = () => {
     closeOpen.value = false;
@@ -692,15 +697,58 @@ const deltaFor = (userId: number, day: string) => {
 
             <Card class="min-w-0">
                 <CardHeader>
-                    <CardTitle>Evolução</CardTitle>
+                    <CardTitle>Gráfico</CardTitle>
                     <CardDescription>
-                        Fichas por jogador ao longo dos dias registrados.
+                        {{ days.length }}
+                        {{
+                            days.length === 1
+                                ? 'dia registrado'
+                                : 'dias registrados'
+                        }}
                     </CardDescription>
+                    <CardAction>
+                        <div
+                            class="flex items-center gap-1 rounded-lg border p-0.5"
+                        >
+                            <Button
+                                type="button"
+                                :variant="
+                                    chartView === 'chips'
+                                        ? 'secondary'
+                                        : 'ghost'
+                                "
+                                size="sm"
+                                :aria-pressed="chartView === 'chips'"
+                                @click="chartView = 'chips'"
+                            >
+                                <ChartLine class="size-3.5" />
+                                <span class="hidden sm:inline">Fichas</span>
+                            </Button>
+                            <Button
+                                type="button"
+                                :variant="
+                                    chartView === 'rank' ? 'secondary' : 'ghost'
+                                "
+                                size="sm"
+                                :aria-pressed="chartView === 'rank'"
+                                @click="chartView = 'rank'"
+                            >
+                                <ListOrdered class="size-3.5" />
+                                <span class="hidden sm:inline">Ranking</span>
+                            </Button>
+                        </div>
+                    </CardAction>
                 </CardHeader>
 
                 <CardContent class="flex-1">
                     <ChipTrendChart
-                        v-if="days.length"
+                        v-if="days.length && chartView === 'chips'"
+                        :players="round.players"
+                        :snapshots="snapshots"
+                    />
+
+                    <RankingTrendChart
+                        v-else-if="days.length"
                         :players="round.players"
                         :snapshots="snapshots"
                     />
