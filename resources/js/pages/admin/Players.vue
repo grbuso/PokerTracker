@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { Head, router, useForm } from '@inertiajs/vue3';
 import { Pencil, Trash2, UserPlus } from '@lucide/vue';
-import { ref } from 'vue';
+import { onBeforeUnmount, ref, watch } from 'vue';
 import PlayerController from '@/actions/App/Http/Controllers/Admin/PlayerController';
+import AvatarCropper from '@/components/AvatarCropper.vue';
 import Heading from '@/components/Heading.vue';
 import InputError from '@/components/InputError.vue';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -61,13 +62,41 @@ const createForm = useForm({
     avatar: null as File | null,
 });
 
-const createAvatarInput = ref<HTMLInputElement | null>(null);
+const pendingAvatar = ref<File | null>(null);
+const cropperTarget = ref<'create' | 'edit' | null>(null);
+const createAvatarPreview = ref<string | null>(null);
+const editAvatarPreview = ref<string | null>(null);
+
+const revokePreview = (url: string | null): void => {
+    if (url?.startsWith('blob:')) {
+        URL.revokeObjectURL(url);
+    }
+};
+
+const setPreview = (target: 'create' | 'edit', file: File): void => {
+    if (target === 'create') {
+        revokePreview(createAvatarPreview.value);
+        createAvatarPreview.value = URL.createObjectURL(file);
+
+        return;
+    }
+
+    revokePreview(editAvatarPreview.value);
+    editAvatarPreview.value = URL.createObjectURL(file);
+};
 
 const onCreateAvatarChange = (event: Event) => {
     const input = event.target as HTMLInputElement;
+    const file = input.files?.[0] ?? null;
 
-    createAvatarInput.value = input;
-    createForm.avatar = input.files?.[0] ?? null;
+    input.value = '';
+
+    if (!file) {
+        return;
+    }
+
+    pendingAvatar.value = file;
+    cropperTarget.value = 'create';
 };
 
 const submitCreate = () => {
@@ -76,10 +105,8 @@ const submitCreate = () => {
         forceFormData: true,
         onSuccess: () => {
             createForm.reset();
-
-            if (createAvatarInput.value) {
-                createAvatarInput.value.value = '';
-            }
+            revokePreview(createAvatarPreview.value);
+            createAvatarPreview.value = null;
         },
     });
 };
@@ -95,13 +122,18 @@ const editForm = useForm({
     avatar: null as File | null,
 });
 
-const editAvatarInput = ref<HTMLInputElement | null>(null);
-
 const onEditAvatarChange = (event: Event) => {
     const input = event.target as HTMLInputElement;
+    const file = input.files?.[0] ?? null;
 
-    editAvatarInput.value = input;
-    editForm.avatar = input.files?.[0] ?? null;
+    input.value = '';
+
+    if (!file) {
+        return;
+    }
+
+    pendingAvatar.value = file;
+    cropperTarget.value = 'edit';
 };
 
 const openEdit = (player: Player) => {
@@ -112,11 +144,33 @@ const openEdit = (player: Player) => {
     editForm.password_confirmation = '';
     editForm.avatar = null;
     editForm.clearErrors();
+    revokePreview(editAvatarPreview.value);
+    editAvatarPreview.value = player.avatar;
     editOpen.value = true;
+};
 
-    if (editAvatarInput.value) {
-        editAvatarInput.value.value = '';
+const onAvatarCropped = (file: File) => {
+    const target = cropperTarget.value;
+
+    pendingAvatar.value = null;
+    cropperTarget.value = null;
+
+    if (target === 'create') {
+        createForm.avatar = file;
+        setPreview('create', file);
+
+        return;
     }
+
+    if (target === 'edit') {
+        editForm.avatar = file;
+        setPreview('edit', file);
+    }
+};
+
+const onAvatarCropClose = () => {
+    pendingAvatar.value = null;
+    cropperTarget.value = null;
 };
 
 const submitEdit = () => {
@@ -131,13 +185,22 @@ const submitEdit = () => {
             editOpen.value = false;
             editing.value = null;
             editForm.reset();
-
-            if (editAvatarInput.value) {
-                editAvatarInput.value.value = '';
-            }
         },
     });
 };
+
+watch(editOpen, (isOpen) => {
+    if (!isOpen) {
+        editForm.avatar = null;
+        revokePreview(editAvatarPreview.value);
+        editAvatarPreview.value = null;
+    }
+});
+
+onBeforeUnmount(() => {
+    revokePreview(createAvatarPreview.value);
+    revokePreview(editAvatarPreview.value);
+});
 
 const deleting = ref<Player | null>(null);
 const deleteOpen = ref(false);
@@ -376,13 +439,31 @@ const deleteBlockedReason = (player: Player): string | null => {
 
                         <div class="grid gap-2">
                             <Label for="avatar">Foto de perfil</Label>
-                            <Input
-                                id="avatar"
-                                type="file"
-                                accept="image/jpeg,image/png,image/webp"
-                                @change="onCreateAvatarChange"
-                            />
+                            <div class="flex items-center gap-3">
+                                <Avatar
+                                    v-if="createAvatarPreview"
+                                    class="size-12 overflow-hidden rounded-full"
+                                >
+                                    <AvatarImage
+                                        :src="createAvatarPreview"
+                                        :alt="createForm.name"
+                                    />
+                                    <AvatarFallback>
+                                        {{ getInitials(createForm.name) }}
+                                    </AvatarFallback>
+                                </Avatar>
+                                <Input
+                                    id="avatar"
+                                    type="file"
+                                    accept="image/jpeg,image/png,image/webp"
+                                    class="flex-1"
+                                    @change="onCreateAvatarChange"
+                                />
+                            </div>
                             <InputError :message="createForm.errors.avatar" />
+                            <p class="text-xs text-muted-foreground">
+                                JPG, PNG ou WebP, até 10 MB.
+                            </p>
                         </div>
 
                         <div class="flex justify-end">
@@ -434,15 +515,30 @@ const deleteBlockedReason = (player: Player): string | null => {
 
                     <div class="grid gap-2">
                         <Label for="edit-avatar">Foto de perfil</Label>
-                        <Input
-                            id="edit-avatar"
-                            type="file"
-                            accept="image/jpeg,image/png,image/webp"
-                            @change="onEditAvatarChange"
-                        />
+                        <div class="flex items-center gap-3">
+                            <Avatar
+                                v-if="editAvatarPreview"
+                                class="size-12 overflow-hidden rounded-full"
+                            >
+                                <AvatarImage
+                                    :src="editAvatarPreview"
+                                    :alt="editing?.name"
+                                />
+                                <AvatarFallback>
+                                    {{ getInitials(editing?.name ?? '') }}
+                                </AvatarFallback>
+                            </Avatar>
+                            <Input
+                                id="edit-avatar"
+                                type="file"
+                                accept="image/jpeg,image/png,image/webp"
+                                class="flex-1"
+                                @change="onEditAvatarChange"
+                            />
+                        </div>
                         <InputError :message="editForm.errors.avatar" />
                         <p class="text-xs text-muted-foreground">
-                            JPG, PNG ou WebP, até 2 MB. Deixe em branco para
+                            JPG, PNG ou WebP, até 10 MB. Deixe em branco para
                             manter a atual.
                         </p>
                     </div>
@@ -503,5 +599,11 @@ const deleteBlockedReason = (player: Player): string | null => {
                 </DialogFooter>
             </DialogContent>
         </Dialog>
+
+        <AvatarCropper
+            :file="pendingAvatar"
+            @cropped="onAvatarCropped"
+            @close="onAvatarCropClose"
+        />
     </div>
 </template>

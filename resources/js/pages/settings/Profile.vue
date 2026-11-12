@@ -3,6 +3,7 @@ import { Form, Head, usePage } from '@inertiajs/vue3';
 import { computed, onBeforeUnmount, ref } from 'vue';
 import ProfileController from '@/actions/App/Http/Controllers/Settings/ProfileController';
 import DiscordLinkController from '@/actions/App/Http/Controllers/Settings/DiscordLinkController';
+import AvatarCropper from '@/components/AvatarCropper.vue';
 import DeleteUser from '@/components/DeleteUser.vue';
 import Heading from '@/components/Heading.vue';
 import InputError from '@/components/InputError.vue';
@@ -48,16 +49,66 @@ const discordLinkExpiry = computed(() => {
 
 const preview = ref<string | null>(null);
 const avatarFileName = ref<string | null>(null);
+const avatarInput = ref<HTMLInputElement | null>(null);
+const pendingAvatar = ref<File | null>(null);
+const confirmedAvatar = ref<File | null>(null);
+
+const setInputFile = (file: File | null): void => {
+    const input = avatarInput.value;
+
+    if (!input) {
+        return;
+    }
+
+    const transfer = new DataTransfer();
+
+    if (file) {
+        transfer.items.add(file);
+    }
+
+    input.files = transfer.files;
+};
 
 const onAvatarChange = (event: Event) => {
-    const file = (event.target as HTMLInputElement).files?.[0] ?? null;
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0] ?? null;
+
+    input.value = '';
+
+    if (!file) {
+        return;
+    }
+
+    pendingAvatar.value = file;
+};
+
+const onAvatarCropped = (file: File) => {
+    confirmedAvatar.value = file;
+    setInputFile(file);
 
     if (preview.value) {
         URL.revokeObjectURL(preview.value);
     }
 
-    preview.value = file ? URL.createObjectURL(file) : null;
-    avatarFileName.value = file?.name ?? null;
+    preview.value = URL.createObjectURL(file);
+    avatarFileName.value = file.name;
+    pendingAvatar.value = null;
+};
+
+const onAvatarCropClose = () => {
+    setInputFile(confirmedAvatar.value);
+    pendingAvatar.value = null;
+};
+
+const onProfileSuccess = () => {
+    confirmedAvatar.value = null;
+    setInputFile(null);
+    avatarFileName.value = null;
+
+    if (preview.value) {
+        URL.revokeObjectURL(preview.value);
+        preview.value = null;
+    }
 };
 
 onBeforeUnmount(() => {
@@ -82,6 +133,7 @@ onBeforeUnmount(() => {
         <Form
             v-bind="ProfileController.update.form()"
             class="space-y-6"
+            :on-success="onProfileSuccess"
             v-slot="{ errors, processing }"
         >
             <div class="flex items-center gap-4">
@@ -119,6 +171,7 @@ onBeforeUnmount(() => {
                         </span>
                         <input
                             id="avatar"
+                            ref="avatarInput"
                             name="avatar"
                             type="file"
                             accept="image/jpeg,image/png,image/webp"
@@ -226,4 +279,10 @@ onBeforeUnmount(() => {
     </div>
 
     <DeleteUser v-if="canDeleteAccount" />
+
+    <AvatarCropper
+        :file="pendingAvatar"
+        @cropped="onAvatarCropped"
+        @close="onAvatarCropClose"
+    />
 </template>
