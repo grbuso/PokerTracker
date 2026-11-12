@@ -15,5 +15,5 @@ jobs:
 
       - name: Deploy to remote server
         run: |
-          sshpass -p ${{ secrets.SSH_PASSWORD }} ssh -p 22 -o StrictHostKeyChecking=no ${{ secrets.SSH_USERNAME }}@${{ secrets.SSH_HOST }} \
+          sshpass -p ${{ secrets.SSH_PASSWORD }} ssh -p 2368 -o StrictHostKeyChecking=no ${{ secrets.SSH_USERNAME }}@${{ secrets.SSH_HOST }} \
           "cd /opt/projects/PokerTracker && git pull origin master && docker compose up -d --build > /dev/null 2>&1 < /dev/null &"
