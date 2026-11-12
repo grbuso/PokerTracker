@@ -6,11 +6,12 @@ import {
     ChevronRight,
     Coins,
     Flame,
+    Maximize2,
     Percent,
     Trophy,
     Users,
 } from '@lucide/vue';
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 import RoundController from '@/actions/App/Http/Controllers/RoundController';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
@@ -22,6 +23,7 @@ import {
     CardHeader,
     CardTitle,
 } from '@/components/ui/card';
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { getInitials } from '@/composables/useInitials';
 import { dashboard } from '@/routes';
 
@@ -37,6 +39,7 @@ type PlayerStats = {
     rounds_played: number;
     win_rate: number | null;
     streak: number;
+    best_stack: number | null;
 };
 
 type PlayerRound = {
@@ -83,6 +86,8 @@ const formatChips = (chips: number): string => chipFormatter.format(chips);
 const formatPercent = (value: number): string =>
     `${percentFormatter.format(value)}%`;
 
+const avatarOpen = ref(false);
+
 const statCards = computed(() => [
     {
         label: 'Vitórias',
@@ -90,9 +95,10 @@ const statCards = computed(() => [
         icon: Trophy,
     },
     {
-        label: 'Rodadas jogadas',
-        value: stats ? String(stats.rounds_played) : '—',
-        icon: Users,
+        label: 'Melhor stack',
+        value:
+            stats && stats.best_stack !== null ? String(stats.best_stack) : '—',
+        icon: Coins,
     },
     {
         label: 'Aproveitamento',
@@ -190,14 +196,33 @@ const visitRound = (roundId: number) => {
             <CardContent
                 class="relative flex flex-wrap items-center gap-4 p-5 md:p-6"
             >
+                <button
+                    v-if="player.avatar"
+                    type="button"
+                    class="group relative cursor-pointer rounded-full outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                    :aria-label="`Ampliar foto de ${player.name}`"
+                    @click="avatarOpen = true"
+                >
+                    <Avatar
+                        class="size-16 overflow-hidden rounded-full ring-2 ring-primary/10"
+                    >
+                        <AvatarImage :src="player.avatar" :alt="player.name" />
+                        <AvatarFallback class="text-lg font-semibold">
+                            {{ getInitials(player.name) }}
+                        </AvatarFallback>
+                    </Avatar>
+
+                    <span
+                        class="pointer-events-none absolute inset-0 flex items-center justify-center rounded-full bg-black/45 opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100"
+                    >
+                        <Maximize2 class="size-5 text-white" />
+                    </span>
+                </button>
+
                 <Avatar
+                    v-else
                     class="size-16 overflow-hidden rounded-full ring-2 ring-primary/10"
                 >
-                    <AvatarImage
-                        v-if="player.avatar"
-                        :src="player.avatar"
-                        :alt="player.name"
-                    />
                     <AvatarFallback class="text-lg font-semibold">
                         {{ getInitials(player.name) }}
                     </AvatarFallback>
@@ -219,7 +244,7 @@ const visitRound = (roundId: number) => {
                     <p class="text-sm text-muted-foreground">
                         {{
                             stats
-                                ? `${stats.rounds_played} rodadas · ${stats.wins} vitórias`
+                                ? `${stats.rounds_played} rodadas jogadas`
                                 : 'Sem estatísticas registradas ainda'
                         }}
                     </p>
@@ -363,5 +388,22 @@ const visitRound = (roundId: number) => {
                 </div>
             </CardContent>
         </Card>
+
+        <Dialog v-model:open="avatarOpen">
+            <DialogContent
+                class="max-w-3xl overflow-hidden border-0 bg-transparent p-0 shadow-none sm:max-w-3xl"
+            >
+                <DialogTitle class="sr-only">
+                    Foto de {{ player.name }}
+                </DialogTitle>
+
+                <img
+                    v-if="player.avatar"
+                    :src="player.avatar"
+                    :alt="player.name"
+                    class="max-h-[80vh] w-full rounded-lg object-contain"
+                />
+            </DialogContent>
+        </Dialog>
     </div>
 </template>

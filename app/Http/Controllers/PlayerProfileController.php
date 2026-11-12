@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Actions\DetermineRoundWinner;
+use App\Models\ChipSnapshot;
 use App\Models\Round;
 use App\Models\User;
 use Inertia\Inertia;
@@ -43,6 +44,10 @@ class PlayerProfileController extends Controller
             $streak++;
         }
 
+        $bestStack = ChipSnapshot::query()
+            ->where('user_id', $player->id)
+            ->max('chips');
+
         return Inertia::render('players/Show', [
             'player' => [
                 'id' => $player->id,
@@ -57,6 +62,7 @@ class PlayerProfileController extends Controller
                     ? null
                     : ($wins / $closedRounds->count()) * 100,
                 'streak' => $streak,
+                'best_stack' => $bestStack !== null ? (int) $bestStack : null,
             ],
             'rounds' => $rounds->map(fn (Round $round): array => [
                 'id' => $round->id,
