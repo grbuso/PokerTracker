@@ -132,12 +132,23 @@ const leader = computed(() => {
     );
 
     return {
+        id: leaders.length > 1 ? null : leaders[0].id,
         name: leaders.length > 1 ? 'Empate' : leaders[0].name,
         avatar: leaders.length > 1 ? null : leaders[0].avatar,
         chips: topChips,
         tied: leaders.length > 1,
         count: leaders.length,
     };
+});
+
+const leaderUrl = computed(() => {
+    const current = leader.value;
+
+    if (!current || current.tied || current.id === null) {
+        return null;
+    }
+
+    return PlayerProfileController.show.url(current.id);
 });
 
 const lastSnapshotOn = computed(() => {
@@ -348,13 +359,18 @@ const cell = (userId: number, day: string): string => {
                             <h2
                                 class="text-3xl font-semibold tracking-tight md:text-4xl"
                             >
-                                {{
-                                    leader
-                                        ? leader.tied
-                                            ? 'Empate'
-                                            : leader.name
-                                        : 'Mesa vazia'
-                                }}
+                                <Link v-if="leaderUrl" :href="leaderUrl">
+                                    {{ leader?.name }}
+                                </Link>
+                                <template v-else>
+                                    {{
+                                        leader
+                                            ? leader.tied
+                                                ? 'Empate'
+                                                : leader.name
+                                            : 'Mesa vazia'
+                                    }}
+                                </template>
                             </h2>
                         </div>
                         <p class="text-sm text-muted-foreground">
