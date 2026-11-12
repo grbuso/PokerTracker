@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { Head, Link, router } from '@inertiajs/vue3';
 import {
+    ArrowDown,
     ArrowLeft,
+    ArrowUp,
     CalendarDays,
     ChevronDown,
     ChevronsUpDown,
@@ -255,6 +257,66 @@ const cell = (userId: number, day: string): string => {
     }
 
     return chips === 0 ? 'Eliminado' : String(chips);
+};
+
+type ChipDelta = {
+    diff: number;
+    direction: 'up' | 'down';
+};
+
+const deltas = computed(() => {
+    const byUser = new Map<number, { day: string; chips: number }[]>();
+
+    for (const snapshot of props.snapshots) {
+        const day = toDateKey(snapshot.recorded_on);
+        const entries = byUser.get(snapshot.user_id) ?? [];
+
+        entries.push({ day, chips: snapshot.chips });
+        byUser.set(snapshot.user_id, entries);
+    }
+
+    const result = new Map<string, ChipDelta>();
+
+    for (const [userId, entries] of byUser) {
+        let previous: { day: string; chips: number } | null = null;
+
+        entries.sort((a, b) => a.day.localeCompare(b.day));
+
+        for (const entry of entries) {
+            if (previous !== null) {
+                const diff = entry.chips - previous.chips;
+
+                if (diff !== 0) {
+                    result.set(`${userId}:${entry.day}`, {
+                        diff,
+                        direction: diff > 0 ? 'up' : 'down',
+                    });
+                }
+            }
+
+            previous = entry;
+        }
+    }
+
+    return result;
+});
+
+const deltaFor = (userId: number, day: string) => {
+    const delta = deltas.value.get(`${userId}:${day}`);
+
+    if (!delta) {
+        return null;
+    }
+
+    const up = delta.direction === 'up';
+
+    return {
+        icon: up ? ArrowUp : ArrowDown,
+        amount: formatChips(Math.abs(delta.diff)),
+        class: up
+            ? 'text-emerald-600 dark:text-emerald-400'
+            : 'text-red-600 dark:text-red-400',
+    };
 };
 </script>
 
@@ -593,7 +655,29 @@ const cell = (userId: number, day: string): string => {
                                             historyCellClass(player.id, day)
                                         "
                                     >
-                                        {{ cell(player.id, day) }}
+                                        <span class="block">
+                                            {{ cell(player.id, day) }}
+                                        </span>
+
+                                        <span
+                                            v-if="deltaFor(player.id, day)"
+                                            class="mt-px inline-flex items-center gap-0.5 text-[10px] leading-none opacity-80"
+                                            :class="
+                                                deltaFor(player.id, day)?.class
+                                            "
+                                            title="Diferença em relação ao registro anterior"
+                                        >
+                                            <component
+                                                :is="
+                                                    deltaFor(player.id, day)
+                                                        ?.icon
+                                                "
+                                                class="size-2.5"
+                                            />
+                                            {{
+                                                deltaFor(player.id, day)?.amount
+                                            }}
+                                        </span>
                                     </td>
                                 </tr>
                             </tbody>
