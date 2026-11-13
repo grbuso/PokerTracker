@@ -434,30 +434,27 @@ const positionChangeLabel = (row: StandingRow): string => {
                                             {{ getInitials(row.name) }}
                                         </AvatarFallback>
                                     </Avatar>
-                                    <span class="inline-flex min-w-0 flex-col">
-                                        <span class="truncate font-medium">
-                                            {{ row.name }}
-                                        </span>
-                                        <span
-                                            v-if="
-                                                row.isEliminated &&
-                                                row.eliminatedAt
-                                            "
-                                            class="text-[10px] leading-tight text-muted-foreground"
-                                        >
-                                            Eliminado em
-                                            {{
-                                                formatShortDate(
-                                                    row.eliminatedAt,
-                                                )
-                                            }}
-                                        </span>
+                                    <span class="truncate font-medium">
+                                        {{ row.name }}
                                     </span>
                                 </span>
                             </td>
 
                             <td class="px-3 py-2.5 text-right tabular-nums">
-                                {{ formatChips(row.chips) }}
+                                <span
+                                    v-if="row.isEliminated"
+                                    class="whitespace-nowrap text-muted-foreground"
+                                >
+                                    Eliminado em
+                                    {{
+                                        row.eliminatedAt
+                                            ? formatShortDate(row.eliminatedAt)
+                                            : '—'
+                                    }}
+                                </span>
+                                <span v-else>
+                                    {{ formatChips(row.chips) }}
+                                </span>
                             </td>
 
                             <td class="px-3 py-2.5 text-right tabular-nums">
