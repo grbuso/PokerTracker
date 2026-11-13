@@ -22,7 +22,7 @@ test('registers guild commands using the bot authorization scheme', function () 
         return $request->method() === 'PUT'
             && $request->url() === 'https://discord.com/api/v10/applications/app-1/guilds/guild-1/commands'
             && $request->hasHeader('Authorization', 'Bot bot-token')
-            && collect($request->data())->pluck('name')->all() === ['fichas', 'vincular'];
+            && collect($request->data())->pluck('name')->all() === ['fichas', 'fichas-foto', 'vincular'];
     });
 });
 

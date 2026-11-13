@@ -34,6 +34,19 @@ class RegisterDiscordCommands extends Command
                 'type' => 1,
             ],
             [
+                'name' => 'fichas-foto',
+                'description' => 'Envia as suas fichas através de uma foto',
+                'type' => 1,
+                'options' => [
+                    [
+                        'type' => 11,
+                        'name' => 'foto',
+                        'description' => 'Foto das fichas para envio ao servidor',
+                        'required' => true,
+                    ],
+                ],
+            ],
+            [
                 'name' => 'vincular',
                 'description' => 'Vincula a sua conta do app ao Discord',
                 'type' => 1,

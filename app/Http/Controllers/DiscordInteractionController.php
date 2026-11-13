@@ -2,21 +2,19 @@
 
 namespace App\Http\Controllers;
 
+use App\Actions\StageChipSubmission;
+use App\Jobs\AnalyzeChipPhoto;
 use App\Models\ChipSnapshot;
 use App\Models\ChipSubmission;
 use App\Models\Round;
 use App\Models\User;
+use App\Support\ChipCounts;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 
 class DiscordInteractionController extends Controller
 {
-    /**
-     * @var list<int>
-     */
-    private const array DENOMINATIONS = [100, 50, 25, 10, 5];
-
     public function __invoke(Request $request): JsonResponse
     {
         if (! $this->signatureIsValid($request)) {
@@ -44,6 +42,7 @@ class DiscordInteractionController extends Controller
 
         return match ($payload['data']['name'] ?? null) {
             'fichas' => $this->handleChipsCommand($payload),
+            'fichas-foto' => $this->handleChipsPhotoCommand($payload),
             'vincular' => $this->handleLinkCommand($payload),
             default => $this->ephemeral(__('Comando desconhecido.')),
         };
@@ -87,6 +86,88 @@ class DiscordInteractionController extends Controller
             ->first();
 
         return $this->chipsModal($submission === null ? [] : ($submission->chip_counts ?? []));
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    private function handleChipsPhotoCommand(array $payload): JsonResponse
+    {
+        $user = $this->linkedUser($payload);
+
+        if ($user === null) {
+            return $this->notLinkedMessage();
+        }
+
+        $round = $this->activeRound();
+
+        if ($round === null) {
+            return $this->ephemeral(__('Não há rodada ativa no momento.'));
+        }
+
+        if (! today()->isWeekday()) {
+            return $this->ephemeral(__('Hoje não é um dia útil de jogo.'));
+        }
+
+        if (! $this->isActivePlayer($round, $user)) {
+            return $this->ephemeral(__('Você não é um jogador ativo desta rodada.'));
+        }
+
+        if ($this->dayWasRegistered($round)) {
+            return $this->ephemeral(__('O dia de hoje já foi registrado.'));
+        }
+
+        $attachment = $this->photoAttachment($payload);
+
+        if ($attachment === null) {
+            return $this->ephemeral(__('Anexe uma foto das suas fichas.'));
+        }
+
+        $url = $attachment['url'] ?? null;
+        $mimeType = $attachment['content_type'] ?? '';
+        $size = $attachment['size'] ?? null;
+
+        if (! is_string($url) || $url === '') {
+            return $this->ephemeral(__('Não consegui acessar a foto enviada. Tente novamente.'));
+        }
+
+        if (is_string($mimeType) && $mimeType !== '' && ! str_starts_with($mimeType, 'image/')) {
+            return $this->ephemeral(__('Envie um arquivo de imagem (JPG, PNG ou WebP).'));
+        }
+
+        if (is_numeric($size) && (int) $size > 10 * 1024 * 1024) {
+            return $this->ephemeral(__('A foto é muito grande. Envie uma imagem de até 10 MB.'));
+        }
+
+        $token = $payload['token'] ?? null;
+        $applicationId = $payload['application_id'] ?? config('services.discord.application_id');
+
+        if (! is_string($token) || $token === '' || ! is_string($applicationId) || $applicationId === '') {
+            return $this->ephemeral(__('Não consegui iniciar a análise da foto. Tente novamente.'));
+        }
+
+        try {
+            AnalyzeChipPhoto::dispatch(
+                $round->id,
+                $user->id,
+                today()->toDateString(),
+                $url,
+                is_string($mimeType) ? $mimeType : '',
+                $token,
+                $applicationId,
+            )->delay(now()->addSeconds(2));
+        } catch (\Throwable $exception) {
+            report($exception);
+
+            return $this->ephemeral(__('Não foi possível iniciar a análise agora. Tente novamente em instantes.'));
+        }
+
+        return response()->json([
+            'type' => 5,
+            'data' => [
+                'flags' => 64,
+            ],
+        ]);
     }
 
     /**
@@ -170,10 +251,10 @@ class DiscordInteractionController extends Controller
             return $this->ephemeral(__('Informe quantidades inteiras e válidas de fichas.'));
         }
 
-        $total = $this->totalFromCounts($counts);
+        $total = ChipCounts::total($counts);
 
         try {
-            $this->stageSubmission($round, $user, today()->toDateString(), $counts, $total);
+            app(StageChipSubmission::class)->handle($round, $user, today()->toDateString(), $counts, $total);
         } catch (\Throwable $exception) {
             report($exception);
 
@@ -181,43 +262,9 @@ class DiscordInteractionController extends Controller
         }
 
         return $this->ephemeral(__('Fichas enviadas: :breakdown = :total fichas. Aguardando o registro do dia.', [
-            'breakdown' => $this->breakdown($counts),
+            'breakdown' => ChipCounts::breakdown($counts),
             'total' => number_format($total, 0, ',', '.'),
         ]));
-    }
-
-    /**
-     * Creates or updates the pending submission of the day.
-     *
-     * @param  array<int, int>  $counts
-     */
-    private function stageSubmission(Round $round, User $user, string $date, array $counts, int $total): void
-    {
-        $submission = ChipSubmission::query()
-            ->where('round_id', $round->id)
-            ->where('user_id', $user->id)
-            ->whereDate('recorded_on', $date)
-            ->latest('id')
-            ->first();
-
-        $submission ??= new ChipSubmission([
-            'round_id' => $round->id,
-            'user_id' => $user->id,
-        ]);
-
-        // Mantém sempre a data pura (Y-m-d), mesmo quando a linha existente foi
-        // gravada por uma versão antiga com data e hora.
-        $submission->recorded_on = $date;
-
-        $submission->fill([
-            'chips' => $total,
-            'chip_counts' => $counts,
-            'source' => 'discord',
-            'submitted_at' => now(),
-            'registered_at' => null,
-        ]);
-
-        $submission->save();
     }
 
     /**
@@ -227,7 +274,7 @@ class DiscordInteractionController extends Controller
     {
         $components = [];
 
-        foreach (self::DENOMINATIONS as $denomination) {
+        foreach (ChipCounts::DENOMINATIONS as $denomination) {
             $input = [
                 'type' => 4,
                 'custom_id' => 'chips_'.$denomination,
@@ -275,7 +322,7 @@ class DiscordInteractionController extends Controller
 
         $counts = [];
 
-        foreach (self::DENOMINATIONS as $denomination) {
+        foreach (ChipCounts::DENOMINATIONS as $denomination) {
             $raw = $values['chips_'.$denomination] ?? '0';
             $count = filter_var($raw, FILTER_VALIDATE_INT, [
                 'options' => ['min_range' => 0],
@@ -289,38 +336,6 @@ class DiscordInteractionController extends Controller
         }
 
         return $counts;
-    }
-
-    /**
-     * @param  array<int, int>  $counts
-     */
-    private function totalFromCounts(array $counts): int
-    {
-        $total = 0;
-
-        foreach (self::DENOMINATIONS as $denomination) {
-            $total += ($counts[$denomination] ?? 0) * $denomination;
-        }
-
-        return $total;
-    }
-
-    /**
-     * @param  array<int, int>  $counts
-     */
-    private function breakdown(array $counts): string
-    {
-        $parts = [];
-
-        foreach (self::DENOMINATIONS as $denomination) {
-            $count = $counts[$denomination] ?? 0;
-
-            if ($count > 0) {
-                $parts[] = $count.'×'.$denomination;
-            }
-        }
-
-        return $parts === [] ? '0 fichas' : implode(', ', $parts);
     }
 
     /**
@@ -382,6 +397,23 @@ class DiscordInteractionController extends Controller
         }
 
         return null;
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     * @return array<string, mixed>|null
+     */
+    private function photoAttachment(array $payload): ?array
+    {
+        $attachmentId = $this->commandOption($payload, 'foto');
+
+        if ($attachmentId === null) {
+            return null;
+        }
+
+        $attachment = $payload['data']['resolved']['attachments'][$attachmentId] ?? null;
+
+        return is_array($attachment) ? $attachment : null;
     }
 
     /**

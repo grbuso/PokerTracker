@@ -1,11 +1,16 @@
 <?php
 
+use App\Actions\StageChipSubmission;
+use App\Jobs\AnalyzeChipPhoto;
 use App\Models\ChipSubmission;
 use App\Models\Round;
 use App\Models\User;
+use Illuminate\Http\Client\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Queue;
 use Illuminate\Testing\TestResponse;
 
 beforeEach(function () {
@@ -209,4 +214,181 @@ test('the vincular command links the discord account to the user', function () {
 
     expect($user->fresh()->discord_id)->toBe('discord-9')
         ->and(Cache::get('discord-link:ABC123'))->toBeNull();
+});
+
+test('the fichas-foto command acknowledges the interaction and dispatches the photo job', function () {
+    Queue::fake();
+
+    $player = User::factory()->create(['discord_id' => 'discord-1']);
+    $round = Round::factory()->create([
+        'starts_on' => '2026-11-01',
+        'total_chips' => 1000,
+        'status' => 'ativa',
+    ]);
+    $round->players()->attach($player->id, ['chips' => 1000]);
+
+    ($this->postDiscord)([
+        'type' => 2,
+        'channel_id' => 'channel-1',
+        'member' => ['user' => ['id' => 'discord-1']],
+        'token' => 'interaction-token',
+        'application_id' => 'app-1',
+        'data' => [
+            'name' => 'fichas-foto',
+            'options' => [
+                ['name' => 'foto', 'type' => 11, 'value' => 'attachment-1'],
+            ],
+            'resolved' => [
+                'attachments' => [
+                    'attachment-1' => [
+                        'id' => 'attachment-1',
+                        'url' => 'https://cdn.discordapp.com/attachments/1/2/chips.jpg',
+                        'content_type' => 'image/jpeg',
+                        'size' => 1024,
+                        'filename' => 'chips.jpg',
+                    ],
+                ],
+            ],
+        ],
+    ])
+        ->assertOk()
+        ->assertJsonPath('type', 5)
+        ->assertJsonPath('data.flags', 64);
+
+    Queue::assertPushed(AnalyzeChipPhoto::class, function (AnalyzeChipPhoto $job) use ($round, $player): bool {
+        return $job->roundId === $round->id
+            && $job->userId === $player->id
+            && $job->date === '2026-11-06'
+            && $job->attachmentUrl === 'https://cdn.discordapp.com/attachments/1/2/chips.jpg'
+            && $job->mimeType === 'image/jpeg'
+            && $job->interactionToken === 'interaction-token'
+            && $job->applicationId === 'app-1';
+    });
+
+    expect(ChipSubmission::query()->count())->toBe(0);
+});
+
+test('the photo job counts the chips with Gemini and stages the submission', function () {
+    config([
+        'services.gemini.key' => 'test-key',
+        'services.gemini.model' => 'gemini-3.8-flash',
+    ]);
+
+    $player = User::factory()->create(['discord_id' => 'discord-1']);
+    $round = Round::factory()->create([
+        'starts_on' => '2026-11-01',
+        'total_chips' => 1000,
+        'status' => 'ativa',
+    ]);
+    $round->players()->attach($player->id, ['chips' => 1000]);
+
+    Http::fake([
+        'cdn.discordapp.com/*' => Http::response('fake-image', 200, ['Content-Type' => 'image/jpeg']),
+        'generativelanguage.googleapis.com/*' => Http::response([
+            'steps' => [
+                [
+                    'type' => 'model_output',
+                    'content' => [
+                        [
+                            'type' => 'text',
+                            'text' => json_encode([
+                                'counts' => [
+                                    '100' => 2,
+                                    '50' => 1,
+                                    '25' => 0,
+                                    '10' => 3,
+                                    '5' => 0,
+                                ],
+                                'confidence' => 0.9,
+                                'notes' => '',
+                            ], JSON_THROW_ON_ERROR),
+                        ],
+                    ],
+                ],
+            ],
+        ], 200),
+        'discord.com/api/v10/webhooks/*' => Http::response([], 200),
+    ]);
+
+    $job = new AnalyzeChipPhoto(
+        $round->id,
+        $player->id,
+        '2026-11-06',
+        'https://cdn.discordapp.com/attachments/1/2/chips.jpg',
+        'image/jpeg',
+        'interaction-token',
+        'app-1',
+    );
+
+    $job->handle(app(StageChipSubmission::class));
+
+    $submission = ChipSubmission::query()->firstOrFail();
+
+    expect($submission->chips)->toBe(280)
+        ->and($submission->chip_counts)->toBe([100 => 2, 50 => 1, 25 => 0, 10 => 3, 5 => 0])
+        ->and($submission->source)->toBe('discord')
+        ->and($submission->registered_at)->toBeNull();
+
+    Http::assertSent(fn (Request $request): bool => str_contains($request->url(), 'generativelanguage.googleapis.com')
+        && $request->hasHeader('x-goog-api-key', 'test-key')
+        && data_get($request->data(), 'model') === 'gemini-3.8-flash'
+        && data_get($request->data(), 'input.1.type') === 'image');
+
+    Http::assertSent(fn (Request $request): bool => $request->method() === 'PATCH'
+        && $request->url() === 'https://discord.com/api/v10/webhooks/app-1/interaction-token/messages/@original'
+        && str_contains((string) data_get($request->data(), 'content'), '280'));
+});
+
+test('the photo job sends a friendly error when Gemini returns invalid counts', function () {
+    config([
+        'services.gemini.key' => 'test-key',
+        'services.gemini.model' => 'gemini-3.8-flash',
+    ]);
+
+    $player = User::factory()->create(['discord_id' => 'discord-1']);
+    $round = Round::factory()->create([
+        'starts_on' => '2026-11-01',
+        'total_chips' => 1000,
+        'status' => 'ativa',
+    ]);
+    $round->players()->attach($player->id, ['chips' => 1000]);
+
+    Http::fake([
+        'cdn.discordapp.com/*' => Http::response('fake-image', 200, ['Content-Type' => 'image/jpeg']),
+        'generativelanguage.googleapis.com/*' => Http::response([
+            'steps' => [
+                [
+                    'type' => 'model_output',
+                    'content' => [
+                        [
+                            'type' => 'text',
+                            'text' => json_encode([
+                                'counts' => ['100' => 'invalido'],
+                                'confidence' => 0.9,
+                                'notes' => '',
+                            ], JSON_THROW_ON_ERROR),
+                        ],
+                    ],
+                ],
+            ],
+        ], 200),
+        'discord.com/api/v10/webhooks/*' => Http::response([], 200),
+    ]);
+
+    $job = new AnalyzeChipPhoto(
+        $round->id,
+        $player->id,
+        '2026-11-06',
+        'https://cdn.discordapp.com/attachments/1/2/chips.jpg',
+        'image/jpeg',
+        'interaction-token',
+        'app-1',
+    );
+
+    $job->handle(app(StageChipSubmission::class));
+
+    expect(ChipSubmission::query()->count())->toBe(0);
+
+    Http::assertSent(fn (Request $request): bool => $request->method() === 'PATCH'
+        && str_contains((string) data_get($request->data(), 'content'), 'Não consegui processar'));
 });
