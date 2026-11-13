@@ -8,6 +8,9 @@ type ChartPlayer = {
     id: number;
     name: string;
     avatar: string | null;
+    pivot: {
+        eliminated_at: string | null;
+    };
 };
 
 type ChartSnapshot = {
@@ -138,6 +141,9 @@ const series = computed(() => {
             color: colors[playerIndex % colors.length],
             points,
             last: points.at(-1)?.chips ?? null,
+            eliminatedAt: player.pivot.eliminated_at
+                ? toDateKey(player.pivot.eliminated_at)
+                : null,
         };
     });
 });
@@ -373,6 +379,13 @@ const tooltipPosition = computed(() => {
                     <span class="font-medium">{{ item.name }}</span>
                     <span class="text-muted-foreground">
                         {{ item.last === null ? '—' : formatChips(item.last) }}
+                    </span>
+                    <span
+                        v-if="item.eliminatedAt"
+                        class="text-[10px] text-muted-foreground"
+                    >
+                        Eliminado em
+                        {{ formatShortDate(item.eliminatedAt) }}
                     </span>
                 </div>
             </div>
