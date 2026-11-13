@@ -17,6 +17,10 @@ type TablePlayer = {
     id: number;
     name: string;
     avatar: string | null;
+    pivot: {
+        chips: number;
+        eliminated_at: string | null;
+    };
 };
 
 type TableSnapshot = {
@@ -25,12 +29,21 @@ type TableSnapshot = {
     chips: number;
 };
 
+type Standing = {
+    chips: number;
+    rank: number;
+    isEliminated: boolean;
+    eliminatedAt: string | null;
+};
+
 type StandingRow = {
     id: number;
     name: string;
     avatar: string | null;
     rank: number;
     chips: number;
+    isEliminated: boolean;
+    eliminatedAt: string | null;
     previousRank: number | null;
     positionDelta: number | null;
     chipsDelta: number | null;
@@ -112,30 +125,78 @@ const chipsByDay = computed(() => {
     return result;
 });
 
-const ranksForDay = (day: string | null): Map<number, number> => {
-    const ranks = new Map<number, number>();
+const eliminationDayFor = (player: TablePlayer): string | null =>
+    player.pivot.eliminated_at ? toDateKey(player.pivot.eliminated_at) : null;
+
+const survivorsForDay = (day: string): number => {
+    const daily = chipsByDay.value.get(day);
+
+    if (daily) {
+        return [...daily.values()].filter((chips) => chips > 0).length;
+    }
+
+    return props.players.filter((player) => {
+        const eliminationDay = eliminationDayFor(player);
+
+        return eliminationDay === null || eliminationDay > day;
+    }).length;
+};
+
+const finalPositionFor = (eliminationDay: string): number =>
+    survivorsForDay(eliminationDay) + 1;
+
+const standingsForDay = (day: string | null): Map<number, Standing> => {
+    const standings = new Map<number, Standing>();
 
     if (!day) {
-        return ranks;
+        return standings;
     }
 
     const daily = chipsByDay.value.get(day);
+    const activeEntries = [...(daily?.entries() ?? [])].filter(
+        ([, chips]) => chips > 0,
+    );
 
-    if (!daily) {
-        return ranks;
-    }
-
-    const entries = [...daily.entries()].filter(([, chips]) => chips > 0);
-
-    for (const [userId, chips] of entries) {
-        const higher = entries.filter(
+    for (const [userId, chips] of activeEntries) {
+        const higher = activeEntries.filter(
             ([, otherChips]) => otherChips > chips,
         ).length;
 
-        ranks.set(userId, higher + 1);
+        standings.set(userId, {
+            chips,
+            rank: higher + 1,
+            isEliminated: false,
+            eliminatedAt: null,
+        });
     }
 
-    return ranks;
+    for (const player of props.players) {
+        if (standings.has(player.id)) {
+            continue;
+        }
+
+        const snapshotChips = daily?.get(player.id);
+        const storedEliminationDay = eliminationDayFor(player);
+        const eliminationDay =
+            storedEliminationDay && storedEliminationDay <= day
+                ? storedEliminationDay
+                : snapshotChips !== undefined && snapshotChips <= 0
+                  ? day
+                  : null;
+
+        if (!eliminationDay || eliminationDay > day) {
+            continue;
+        }
+
+        standings.set(player.id, {
+            chips: 0,
+            rank: finalPositionFor(eliminationDay),
+            isEliminated: true,
+            eliminatedAt: eliminationDay,
+        });
+    }
+
+    return standings;
 };
 
 const rows = computed<StandingRow[]>(() => {
@@ -145,49 +206,43 @@ const rows = computed<StandingRow[]>(() => {
         return [];
     }
 
-    const daily = chipsByDay.value.get(day);
+    const current = standingsForDay(day);
+    const previous = standingsForDay(previousDay.value);
 
-    if (!daily) {
-        return [];
-    }
-
-    const previous = previousDay.value;
-    const previousDaily = previous ? chipsByDay.value.get(previous) : undefined;
-    const currentRanks = ranksForDay(day);
-    const previousRanks = ranksForDay(previous);
-
-    return [...daily.entries()]
-        .filter(([, chips]) => chips > 0)
-        .map(([userId, chips]): StandingRow | null => {
+    return [...current.entries()]
+        .map(([userId, standing]): StandingRow | null => {
             const player = playersById.value.get(userId);
-            const rank = currentRanks.get(userId);
 
-            if (!player || rank === undefined) {
+            if (!player) {
                 return null;
             }
 
-            const previousRank = previousRanks.get(userId) ?? null;
-            const previousChips = previousDaily?.get(userId) ?? null;
+            const previousStanding = previous.get(userId);
 
             return {
                 id: userId,
                 name: player.name,
                 avatar: player.avatar,
-                rank,
-                chips,
-                previousRank,
+                rank: standing.rank,
+                chips: standing.chips,
+                isEliminated: standing.isEliminated,
+                eliminatedAt: standing.eliminatedAt,
+                previousRank: previousStanding?.rank ?? null,
                 positionDelta:
-                    previousRank === null ? null : previousRank - rank,
-                chipsDelta:
-                    previousChips === null || previousChips <= 0
+                    previousStanding === undefined
                         ? null
-                        : chips - previousChips,
+                        : previousStanding.rank - standing.rank,
+                chipsDelta:
+                    previousStanding === undefined
+                        ? null
+                        : standing.chips - previousStanding.chips,
             };
         })
         .filter((row): row is StandingRow => row !== null)
         .sort(
             (first, second) =>
                 first.rank - second.rank ||
+                Number(first.isEliminated) - Number(second.isEliminated) ||
                 first.name.localeCompare(second.name, 'pt-BR'),
         );
 });
@@ -311,11 +366,21 @@ const positionChangeLabel = (row: StandingRow): string => {
                             v-for="row in rows"
                             :key="row.id"
                             class="border-t transition-colors hover:bg-muted/30"
+                            :class="
+                                row.isEliminated
+                                    ? 'bg-muted/20 text-muted-foreground'
+                                    : ''
+                            "
                         >
                             <td class="px-3 py-2.5 align-middle">
                                 <div class="flex items-center gap-2">
                                     <span
                                         class="inline-flex w-8 justify-end text-base font-semibold tabular-nums"
+                                        :title="
+                                            row.isEliminated
+                                                ? 'Posição final'
+                                                : undefined
+                                        "
                                     >
                                         {{ row.rank }}º
                                     </span>
@@ -369,8 +434,24 @@ const positionChangeLabel = (row: StandingRow): string => {
                                             {{ getInitials(row.name) }}
                                         </AvatarFallback>
                                     </Avatar>
-                                    <span class="truncate font-medium">
-                                        {{ row.name }}
+                                    <span class="inline-flex min-w-0 flex-col">
+                                        <span class="truncate font-medium">
+                                            {{ row.name }}
+                                        </span>
+                                        <span
+                                            v-if="
+                                                row.isEliminated &&
+                                                row.eliminatedAt
+                                            "
+                                            class="text-[10px] leading-tight text-muted-foreground"
+                                        >
+                                            Eliminado em
+                                            {{
+                                                formatShortDate(
+                                                    row.eliminatedAt,
+                                                )
+                                            }}
+                                        </span>
                                     </span>
                                 </span>
                             </td>
@@ -411,12 +492,13 @@ const positionChangeLabel = (row: StandingRow): string => {
                 v-else
                 class="flex h-40 items-center justify-center rounded-lg border border-dashed text-sm text-muted-foreground"
             >
-                Nenhum jogador com fichas neste dia.
+                Nenhum jogador registrado neste dia.
             </div>
 
             <p class="text-[11px] leading-relaxed text-muted-foreground">
-                Jogadores com 0 fichas não entram na
-                classificação.
+                ↑ subiu · ↓ desceu em relação ao dia anterior. A coluna Variação
+                mostra a diferença de fichas. Jogadores eliminados permanecem na
+                classificação com a posição final.
             </p>
         </div>
     </div>
