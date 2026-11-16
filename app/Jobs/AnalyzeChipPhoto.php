@@ -143,7 +143,7 @@ class AnalyzeChipPhoto implements ShouldQueue
                 throw $exception;
             }
 
-            $this->respondWithError(__('Não consegui processar as fichas desta foto. Tente novamente ou use /fichas para enviar manualmente.'));
+            $this->respondWithError($this->failureMessage($exception));
 
             return;
         }
@@ -187,10 +187,36 @@ class AnalyzeChipPhoto implements ShouldQueue
             if ($exception->status === 404) {
                 return __('O modelo de IA não foi encontrado. Confira a versão configurada no servidor ou use /fichas para enviar manualmente.');
             }
+
+            if (in_array($exception->status, [400, 422], true)) {
+                return __('O Roboflow recusou a requisição. Confira o modelo/versão e a configuração do servidor ou use /fichas para enviar manualmente.');
+            }
         }
 
         if ($this->isTransientFailure($exception)) {
             return __('O serviço de IA está com alta demanda ou indisponível agora. Tente novamente em alguns minutos ou use /fichas para enviar manualmente.');
+        }
+
+        $message = $exception?->getMessage() ?? '';
+
+        if (str_contains($message, 'unmapped classes')) {
+            return __('A IA identificou fichas, mas as classes do modelo não estão mapeadas. Use /fichas para enviar manualmente.');
+        }
+
+        if (str_contains($message, 'classification response')) {
+            return __('O modelo de IA configurado não é de detecção de objetos. Use /fichas para enviar manualmente.');
+        }
+
+        if (str_contains($message, 'did not identify any chips')) {
+            return __('Não identifiquei fichas nesta foto. Tente outra foto ou use /fichas para enviar manualmente.');
+        }
+
+        if (str_contains($message, 'invalid response payload')) {
+            return __('O Roboflow retornou uma resposta inesperada. Use /fichas para enviar manualmente.');
+        }
+
+        if (str_contains($message, 'Could not download')) {
+            return __('Não consegui baixar a foto enviada. Tente novamente ou use /fichas para enviar manualmente.');
         }
 
         return __('Não consegui analisar a foto. Tente novamente ou use /fichas para enviar manualmente.');

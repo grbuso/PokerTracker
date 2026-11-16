@@ -438,5 +438,5 @@ test('the photo job sends a friendly error when Roboflow returns unmapped classe
     expect(ChipSubmission::query()->count())->toBe(0);
 
     Http::assertSent(fn (Request $request): bool => $request->method() === 'PATCH'
-        && str_contains((string) data_get($request->data(), 'content'), 'Não consegui processar'));
+        && str_contains((string) data_get($request->data(), 'content'), 'classes do modelo não estão mapeadas'));
 });
