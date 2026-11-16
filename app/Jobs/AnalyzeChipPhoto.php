@@ -24,7 +24,7 @@ class AnalyzeChipPhoto implements ShouldQueue
     /**
      * @var list<int>
      */
-    public array $backoff = [15, 45, 120];
+    public array $backoff = [5, 15, 30];
 
     public int $timeout = 150;
 
@@ -152,6 +152,10 @@ class AnalyzeChipPhoto implements ShouldQueue
             report($exception);
 
             if ($this->isTransientFailure($exception)) {
+                if ($this->job !== null && $this->attempts() === 1) {
+                    $this->editOriginalResponse(__('O serviço de IA está temporariamente indisponível. Ainda estou tentando contar as fichas...'));
+                }
+
                 throw $exception;
             }
 

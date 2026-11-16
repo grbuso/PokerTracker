@@ -362,6 +362,7 @@ test('the photo job rethrows temporary Gemini failures so the queue can retry', 
                 'code' => 'service_unavailable',
             ],
         ], 503),
+        'discord.com/api/v10/webhooks/*' => Http::response([], 200),
     ]);
 
     $job = new AnalyzeChipPhoto(
@@ -374,14 +375,17 @@ test('the photo job rethrows temporary Gemini failures so the queue can retry', 
         'app-1',
     );
 
+    $job->withFakeQueueInteractions();
+
     expect(fn () => $job->handle(app(StageChipSubmission::class)))
         ->toThrow(GeminiRequestException::class, 'Gemini request failed: 503');
 
     expect(ChipSubmission::query()->count())->toBe(0)
         ->and($job->tries)->toBe(4)
-        ->and($job->backoff)->toBe([15, 45, 120]);
+        ->and($job->backoff)->toBe([5, 15, 30]);
 
-    Http::assertNotSent(fn (Request $request): bool => $request->method() === 'PATCH');
+    Http::assertSent(fn (Request $request): bool => $request->method() === 'PATCH'
+        && str_contains((string) data_get($request->data(), 'content'), 'temporariamente indisponível'));
 });
 
 test('the photo job reports high demand after transient Gemini failures are exhausted', function () {
