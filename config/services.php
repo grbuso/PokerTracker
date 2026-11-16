@@ -45,7 +45,7 @@ return [
 
     'roboflow' => [
         'key' => env('ROBOFLOW_API_KEY'),
-        'model' => env('ROBOFLOW_MODEL') ?: 'fichas-poker-r5t24/4',
+        'model' => env('ROBOFLOW_MODEL') ?: 'gabriel-buso/fichas-poker-r5t24-4-rfdetr-nas-t1--e65db0',
         'confidence' => (float) (env('ROBOFLOW_CONFIDENCE') ?: 0.4),
         'overlap' => (float) (env('ROBOFLOW_OVERLAP') ?: 0.3),
     ],

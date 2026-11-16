@@ -272,7 +272,7 @@ test('the fichas-foto command acknowledges the interaction and dispatches the ph
 test('the photo job counts the chips with Roboflow and stages the submission', function () {
     config([
         'services.roboflow.key' => 'test-key',
-        'services.roboflow.model' => 'fichas-poker-r5t24/4',
+        'services.roboflow.model' => 'gabriel-buso/fichas-poker-r5t24-4-rfdetr-nas-t1--e65db0',
     ]);
 
     $player = User::factory()->create(['discord_id' => 'discord-1']);
@@ -319,7 +319,7 @@ test('the photo job counts the chips with Roboflow and stages the submission', f
         ->and($submission->source)->toBe('discord')
         ->and($submission->registered_at)->toBeNull();
 
-    Http::assertSent(fn (Request $request): bool => str_contains($request->url(), 'serverless.roboflow.com/fichas-poker-r5t24/4')
+    Http::assertSent(fn (Request $request): bool => str_contains($request->url(), 'serverless.roboflow.com/gabriel-buso/fichas-poker-r5t24-4-rfdetr-nas-t1--e65db0')
         && $request->hasHeader('Authorization', 'Bearer test-key')
         && str_contains($request->url(), 'confidence=0.4')
         && str_contains($request->url(), 'overlap=0.3')
@@ -333,7 +333,7 @@ test('the photo job counts the chips with Roboflow and stages the submission', f
 test('the photo job rethrows temporary Roboflow failures so the queue can retry', function () {
     config([
         'services.roboflow.key' => 'test-key',
-        'services.roboflow.model' => 'fichas-poker-r5t24/4',
+        'services.roboflow.model' => 'gabriel-buso/fichas-poker-r5t24-4-rfdetr-nas-t1--e65db0',
     ]);
 
     $player = User::factory()->create(['discord_id' => 'discord-1']);
@@ -402,7 +402,7 @@ test('the photo job reports high demand after transient Roboflow failures are ex
 test('the photo job sends a friendly error when Roboflow returns unmapped classes', function () {
     config([
         'services.roboflow.key' => 'test-key',
-        'services.roboflow.model' => 'fichas-poker-r5t24/4',
+        'services.roboflow.model' => 'gabriel-buso/fichas-poker-r5t24-4-rfdetr-nas-t1--e65db0',
     ]);
 
     $player = User::factory()->create(['discord_id' => 'discord-1']);
