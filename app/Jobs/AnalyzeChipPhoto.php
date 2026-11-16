@@ -3,12 +3,14 @@
 namespace App\Jobs;
 
 use App\Actions\StageChipSubmission;
+use App\Exceptions\GeminiRequestException;
 use App\Models\ChipSnapshot;
 use App\Models\Round;
 use App\Models\User;
 use App\Support\ChipCounts;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Http;
 use RuntimeException;
 use Throwable;
@@ -17,7 +19,12 @@ class AnalyzeChipPhoto implements ShouldQueue
 {
     use Queueable;
 
-    public int $tries = 1;
+    public int $tries = 4;
+
+    /**
+     * @var list<int>
+     */
+    public array $backoff = [15, 45, 120];
 
     public int $timeout = 150;
 
@@ -112,7 +119,7 @@ class AnalyzeChipPhoto implements ShouldQueue
             ]);
 
             if ($response->failed()) {
-                throw new RuntimeException('Gemini request failed: '.$response->status().' '.$response->body());
+                throw new GeminiRequestException($response->status(), $response->body());
             }
 
             $payload = $response->json();
@@ -144,12 +151,10 @@ class AnalyzeChipPhoto implements ShouldQueue
         } catch (Throwable $exception) {
             report($exception);
 
-            $this->respondWithError(__('Não consegui processar as fichas desta foto. Tente novamente ou use /fichas para enviar manualmente.'));
+            if ($this->isTransientFailure($exception)) {
+                throw $exception;
+            }
 
-            return;
-        }
-
-        if ($counts === null) {
             $this->respondWithError(__('Não consegui processar as fichas desta foto. Tente novamente ou use /fichas para enviar manualmente.'));
 
             return;
@@ -167,11 +172,30 @@ class AnalyzeChipPhoto implements ShouldQueue
 
     public function failed(?Throwable $exception): void
     {
-        if ($exception !== null) {
+        if ($exception !== null && ! $this->isTransientFailure($exception)) {
             report($exception);
         }
 
-        $this->respondWithError(__('Não consegui analisar a foto. Tente novamente ou use /fichas para enviar manualmente.'));
+        $this->respondWithError($this->failureMessage($exception));
+    }
+
+    private function isTransientFailure(?Throwable $exception): bool
+    {
+        return $exception instanceof ConnectionException
+            || ($exception instanceof GeminiRequestException && $exception->isTransient());
+    }
+
+    private function failureMessage(?Throwable $exception): string
+    {
+        if ($exception instanceof GeminiRequestException && $exception->status === 429) {
+            return __('O limite de uso da IA foi atingido. Tente novamente em alguns minutos ou use /fichas para enviar manualmente.');
+        }
+
+        if ($this->isTransientFailure($exception)) {
+            return __('O serviço de IA está com alta demanda ou indisponível agora. Tente novamente em alguns minutos ou use /fichas para enviar manualmente.');
+        }
+
+        return __('Não consegui analisar a foto. Tente novamente ou use /fichas para enviar manualmente.');
     }
 
     /**

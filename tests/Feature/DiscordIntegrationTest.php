@@ -1,6 +1,7 @@
 <?php
 
 use App\Actions\StageChipSubmission;
+use App\Exceptions\GeminiRequestException;
 use App\Jobs\AnalyzeChipPhoto;
 use App\Models\ChipSubmission;
 use App\Models\Round;
@@ -337,6 +338,71 @@ test('the photo job counts the chips with Gemini and stages the submission', fun
     Http::assertSent(fn (Request $request): bool => $request->method() === 'PATCH'
         && $request->url() === 'https://discord.com/api/v10/webhooks/app-1/interaction-token/messages/@original'
         && str_contains((string) data_get($request->data(), 'content'), '280'));
+});
+
+test('the photo job rethrows temporary Gemini failures so the queue can retry', function () {
+    config([
+        'services.gemini.key' => 'test-key',
+        'services.gemini.model' => 'gemini-3.8-flash',
+    ]);
+
+    $player = User::factory()->create(['discord_id' => 'discord-1']);
+    $round = Round::factory()->create([
+        'starts_on' => '2026-11-01',
+        'total_chips' => 1000,
+        'status' => 'ativa',
+    ]);
+    $round->players()->attach($player->id, ['chips' => 1000]);
+
+    Http::fake([
+        'cdn.discordapp.com/*' => Http::response('fake-image', 200, ['Content-Type' => 'image/jpeg']),
+        'generativelanguage.googleapis.com/*' => Http::response([
+            'error' => [
+                'message' => 'gemini-3.8-flash is currently experiencing high demand.',
+                'code' => 'service_unavailable',
+            ],
+        ], 503),
+    ]);
+
+    $job = new AnalyzeChipPhoto(
+        $round->id,
+        $player->id,
+        '2026-11-06',
+        'https://cdn.discordapp.com/attachments/1/2/chips.jpg',
+        'image/jpeg',
+        'interaction-token',
+        'app-1',
+    );
+
+    expect(fn () => $job->handle(app(StageChipSubmission::class)))
+        ->toThrow(GeminiRequestException::class, 'Gemini request failed: 503');
+
+    expect(ChipSubmission::query()->count())->toBe(0)
+        ->and($job->tries)->toBe(4)
+        ->and($job->backoff)->toBe([15, 45, 120]);
+
+    Http::assertNotSent(fn (Request $request): bool => $request->method() === 'PATCH');
+});
+
+test('the photo job reports high demand after transient Gemini failures are exhausted', function () {
+    Http::fake([
+        'discord.com/api/v10/webhooks/*' => Http::response([], 200),
+    ]);
+
+    $job = new AnalyzeChipPhoto(
+        1,
+        1,
+        '2026-11-06',
+        'https://cdn.discordapp.com/attachments/1/2/chips.jpg',
+        'image/jpeg',
+        'interaction-token',
+        'app-1',
+    );
+
+    $job->failed(new GeminiRequestException(503, '{"error":{"code":"service_unavailable"}}'));
+
+    Http::assertSent(fn (Request $request): bool => $request->method() === 'PATCH'
+        && str_contains((string) data_get($request->data(), 'content'), 'alta demanda'));
 });
 
 test('the photo job sends a friendly error when Gemini returns invalid counts', function () {
