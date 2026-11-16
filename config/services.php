@@ -43,8 +43,10 @@ return [
         'chips_channel_id' => env('DISCORD_CHIPS_CHANNEL_ID'),
     ],
 
-    'gemini' => [
-        'key' => env('GEMINI_API_KEY'),
-        'model' => env('GEMINI_MODEL', 'gemini-3.8-flash'),
+    'roboflow' => [
+        'key' => env('ROBOFLOW_API_KEY'),
+        'model' => env('ROBOFLOW_MODEL') ?: 'fichas-poker-r5t24/1',
+        'confidence' => (float) (env('ROBOFLOW_CONFIDENCE') ?: 0.4),
+        'overlap' => (float) (env('ROBOFLOW_OVERLAP') ?: 0.3),
     ],
 ];

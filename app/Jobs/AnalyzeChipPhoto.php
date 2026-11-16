@@ -3,7 +3,7 @@
 namespace App\Jobs;
 
 use App\Actions\StageChipSubmission;
-use App\Exceptions\GeminiRequestException;
+use App\Exceptions\RoboflowRequestException;
 use App\Models\ChipSnapshot;
 use App\Models\Round;
 use App\Models\User;
@@ -67,11 +67,11 @@ class AnalyzeChipPhoto implements ShouldQueue
             return;
         }
 
-        $apiKey = (string) config('services.gemini.key');
-        $model = (string) config('services.gemini.model');
+        $apiKey = (string) config('services.roboflow.key');
+        $model = trim((string) config('services.roboflow.model'));
 
         if ($apiKey === '' || $model === '') {
-            report(new RuntimeException('Gemini is not configured.'));
+            report(new RuntimeException('Roboflow is not configured.'));
 
             $this->respondWithError(__('A análise por foto não está configurada no servidor. Use /fichas para enviar manualmente.'));
 
@@ -101,50 +101,34 @@ class AnalyzeChipPhoto implements ShouldQueue
                 throw new RuntimeException('The Discord attachment is not an image.');
             }
 
+            $confidence = (float) config('services.roboflow.confidence', 0.4);
+            $overlap = (float) config('services.roboflow.overlap', 0.3);
+
             $response = Http::withHeaders([
-                'x-goog-api-key' => $apiKey,
-                'Api-Revision' => '2026-05-20',
-            ])->timeout(90)->post('https://generativelanguage.googleapis.com/v1beta/interactions', [
-                'model' => $model,
-                'store' => false,
-                'input' => [
-                    ['type' => 'text', 'text' => $this->prompt()],
-                    ['type' => 'image', 'data' => base64_encode($body), 'mime_type' => $mimeType],
-                ],
-                'response_format' => [
-                    'type' => 'text',
-                    'mime_type' => 'application/json',
-                    'schema' => $this->schema(),
-                ],
-            ]);
+                'Authorization' => 'Bearer '.$apiKey,
+                'Accept' => 'application/json',
+            ])->timeout(90)
+                ->withBody(base64_encode($body), 'application/x-www-form-urlencoded')
+                ->post('https://serverless.roboflow.com/'.ltrim($model, '/').'?'.http_build_query([
+                    'confidence' => $confidence,
+                    'overlap' => $overlap,
+                ]));
 
             if ($response->failed()) {
-                throw new GeminiRequestException($response->status(), $response->body());
+                throw new RoboflowRequestException($response->status(), $response->body());
             }
 
             $payload = $response->json();
 
             if (! is_array($payload)) {
-                throw new RuntimeException('Gemini returned an invalid response payload.');
+                throw new RuntimeException('Roboflow returned an invalid response payload.');
             }
 
-            $text = $this->extractText($payload);
-
-            if ($text === null) {
-                throw new RuntimeException('Gemini did not return a text response.');
-            }
-
-            $data = $this->decodeJson($text);
-            $counts = ChipCounts::normalize($data['counts'] ?? null);
-
-            if ($counts === null) {
-                throw new RuntimeException('Gemini returned invalid chip counts.');
-            }
-
+            $counts = $this->countPredictions($payload, $confidence);
             $total = ChipCounts::total($counts);
 
             if ($total <= 0) {
-                throw new RuntimeException('Gemini did not identify any chips.');
+                throw new RuntimeException('Roboflow did not identify any chips.');
             }
 
             $stageSubmission->handle($round, $user, $this->date, $counts, $total);
@@ -186,13 +170,23 @@ class AnalyzeChipPhoto implements ShouldQueue
     private function isTransientFailure(?Throwable $exception): bool
     {
         return $exception instanceof ConnectionException
-            || ($exception instanceof GeminiRequestException && $exception->isTransient());
+            || ($exception instanceof RoboflowRequestException && $exception->isTransient());
     }
 
     private function failureMessage(?Throwable $exception): string
     {
-        if ($exception instanceof GeminiRequestException && $exception->status === 429) {
-            return __('O limite de uso da IA foi atingido. Tente novamente em alguns minutos ou use /fichas para enviar manualmente.');
+        if ($exception instanceof RoboflowRequestException) {
+            if ($exception->status === 429) {
+                return __('O limite de uso da IA foi atingido. Tente novamente em alguns minutos ou use /fichas para enviar manualmente.');
+            }
+
+            if (in_array($exception->status, [401, 403], true)) {
+                return __('A chave da IA foi recusada. Confira a configuração do servidor ou use /fichas para enviar manualmente.');
+            }
+
+            if ($exception->status === 404) {
+                return __('O modelo de IA não foi encontrado. Confira a versão configurada no servidor ou use /fichas para enviar manualmente.');
+            }
         }
 
         if ($this->isTransientFailure($exception)) {
@@ -204,119 +198,110 @@ class AnalyzeChipPhoto implements ShouldQueue
 
     /**
      * @param  array<string, mixed>  $payload
+     * @return array<int, int>
      */
-    private function extractText(array $payload): ?string
+    private function countPredictions(array $payload, float $minimumConfidence): array
     {
-        if (is_string($payload['output_text'] ?? null)) {
-            return $payload['output_text'];
+        $predictions = $payload['predictions'] ?? null;
+
+        if (! is_array($predictions) || ! array_is_list($predictions)) {
+            throw new RuntimeException('Roboflow returned an invalid response payload.');
         }
 
-        $steps = $payload['steps'] ?? null;
+        $counts = array_fill_keys(ChipCounts::DENOMINATIONS, 0);
+        $unknownClasses = [];
+        $hasBoundingBoxes = false;
 
-        if (! is_array($steps)) {
-            return null;
-        }
-
-        foreach ($steps as $step) {
-            if (! is_array($step) || ($step['type'] ?? null) !== 'model_output') {
+        foreach ($predictions as $prediction) {
+            if (! is_array($prediction)) {
                 continue;
             }
 
-            $contents = $step['content'] ?? null;
+            if (isset($prediction['x'], $prediction['y'], $prediction['width'], $prediction['height'])) {
+                $hasBoundingBoxes = true;
+            }
 
-            if (! is_array($contents)) {
+            $class = $prediction['class'] ?? null;
+            $confidence = $prediction['confidence'] ?? null;
+
+            if (! is_string($class) || trim($class) === '') {
                 continue;
             }
 
-            foreach ($contents as $content) {
-                if (is_array($content) && ($content['type'] ?? null) === 'text' && is_string($content['text'] ?? null)) {
-                    return $content['text'];
-                }
+            if (is_numeric($confidence) && (float) $confidence < $minimumConfidence) {
+                continue;
+            }
+
+            $denomination = $this->denominationFor($class);
+
+            if ($denomination === null) {
+                $unknownClasses[] = $class;
+
+                continue;
+            }
+
+            $counts[$denomination]++;
+        }
+
+        if ($predictions !== [] && ! $hasBoundingBoxes) {
+            throw new RuntimeException('Roboflow returned a classification response; an object detection model is required.');
+        }
+
+        if (array_sum($counts) > 0) {
+            return $counts;
+        }
+
+        if ($unknownClasses !== []) {
+            throw new RuntimeException('Roboflow returned unmapped classes: '.implode(', ', array_unique($unknownClasses)));
+        }
+
+        throw new RuntimeException('Roboflow did not identify any chips.');
+    }
+
+    private function denominationFor(string $class): ?int
+    {
+        $normalized = strtolower(trim($class));
+        $compact = preg_replace('/[^a-z0-9]+/', '', $normalized) ?? '';
+        $spaced = trim(preg_replace('/[^a-z0-9]+/', ' ', $normalized) ?? '');
+
+        $aliases = [
+            'blackchip' => 50,
+            'greenchip' => 100,
+            'whitechip' => 10,
+            'redchip' => 5,
+            'bluechip' => 25,
+            'black' => 50,
+            'preto' => 50,
+            'preta' => 50,
+            'green' => 100,
+            'verde' => 100,
+            'white' => 10,
+            'branco' => 10,
+            'branca' => 10,
+            'red' => 5,
+            'vermelho' => 5,
+            'vermelha' => 5,
+            'blue' => 25,
+            'azul' => 25,
+        ];
+
+        if (isset($aliases[$compact])) {
+            return $aliases[$compact];
+        }
+
+        foreach (ChipCounts::DENOMINATIONS as $denomination) {
+            if (preg_match('/(?<!\d)'.$denomination.'(?!\d)/', $spaced) === 1) {
+                return $denomination;
+            }
+        }
+
+        foreach ($aliases as $alias => $denomination) {
+            if (str_contains($compact, $alias)) {
+                return $denomination;
             }
         }
 
         return null;
-    }
-
-    /**
-     * @return array<string, mixed>
-     */
-    private function decodeJson(string $text): array
-    {
-        $text = trim($text);
-
-        if (preg_match('/```(?:json)?\s*(.*?)```/s', $text, $matches) === 1) {
-            $text = trim($matches[1]);
-        }
-
-        $decoded = json_decode($text, true);
-
-        if (! is_array($decoded) && preg_match('/\{.*\}/s', $text, $matches) === 1) {
-            $decoded = json_decode($matches[0], true);
-        }
-
-        if (! is_array($decoded)) {
-            throw new RuntimeException('Could not decode the Gemini JSON response.');
-        }
-
-        return $decoded;
-    }
-
-    /**
-     * @return array<string, mixed>
-     */
-    private function schema(): array
-    {
-        return [
-            'type' => 'object',
-            'properties' => [
-                'counts' => [
-                    'type' => 'object',
-                    'properties' => [
-                        '100' => ['type' => 'integer'],
-                        '50' => ['type' => 'integer'],
-                        '25' => ['type' => 'integer'],
-                        '10' => ['type' => 'integer'],
-                        '5' => ['type' => 'integer'],
-                    ],
-                    'required' => ['100', '50', '25', '10', '5'],
-                ],
-                'confidence' => ['type' => 'number'],
-                'notes' => ['type' => 'string'],
-            ],
-            'required' => ['counts', 'confidence', 'notes'],
-        ];
-    }
-
-    private function prompt(): string
-    {
-        return <<<'PROMPT'
-Você está analisando uma foto de fichas de poker.
-
-Conte as fichas visíveis usando apenas as cores abaixo:
-
-- Verde = 100
-- Preta = 50
-- Azul = 25
-- Branca = 10
-- Vermelha = 5
-
-Todas as cores, exceto o verde, podem aparecer em dois formatos físicos diferentes:
-um maior com listras laterais e outro menor e liso. Os dois formatos da mesma cor
-valem o mesmo e devem ser somados na mesma contagem.
-
-Regras:
-- Conte cada ficha visível na imagem.
-- Não conte a mesma ficha mais de uma vez.
-- Considere a imagem inteira, inclusive as bordas.
-- Não invente fichas escondidas em pilhas; conte apenas o que estiver visível.
-- Ignore o fundo da mesa e quaisquer objetos que não sejam fichas.
-- Se não houver nenhuma ficha de uma cor, use 0.
-- Responda apenas com o JSON solicitado, sem explicações fora do JSON.
-
-Retorne as quantidades por valor de ficha no campo "counts", usando as chaves
-"100", "50", "25", "10" e "5".
-PROMPT;
     }
 
     private function respondWithError(string $message): void

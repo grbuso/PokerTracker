@@ -1,7 +1,7 @@
 <?php
 
 use App\Actions\StageChipSubmission;
-use App\Exceptions\GeminiRequestException;
+use App\Exceptions\RoboflowRequestException;
 use App\Jobs\AnalyzeChipPhoto;
 use App\Models\ChipSubmission;
 use App\Models\Round;
@@ -269,10 +269,10 @@ test('the fichas-foto command acknowledges the interaction and dispatches the ph
     expect(ChipSubmission::query()->count())->toBe(0);
 });
 
-test('the photo job counts the chips with Gemini and stages the submission', function () {
+test('the photo job counts the chips with Roboflow and stages the submission', function () {
     config([
-        'services.gemini.key' => 'test-key',
-        'services.gemini.model' => 'gemini-3.8-flash',
+        'services.roboflow.key' => 'test-key',
+        'services.roboflow.model' => 'fichas-poker-r5t24/1',
     ]);
 
     $player = User::factory()->create(['discord_id' => 'discord-1']);
@@ -285,27 +285,16 @@ test('the photo job counts the chips with Gemini and stages the submission', fun
 
     Http::fake([
         'cdn.discordapp.com/*' => Http::response('fake-image', 200, ['Content-Type' => 'image/jpeg']),
-        'generativelanguage.googleapis.com/*' => Http::response([
-            'steps' => [
-                [
-                    'type' => 'model_output',
-                    'content' => [
-                        [
-                            'type' => 'text',
-                            'text' => json_encode([
-                                'counts' => [
-                                    '100' => 2,
-                                    '50' => 1,
-                                    '25' => 0,
-                                    '10' => 3,
-                                    '5' => 0,
-                                ],
-                                'confidence' => 0.9,
-                                'notes' => '',
-                            ], JSON_THROW_ON_ERROR),
-                        ],
-                    ],
-                ],
+        'serverless.roboflow.com/*' => Http::response([
+            'predictions' => [
+                ['class' => 'Green Chip', 'confidence' => 0.9, 'x' => 10, 'y' => 10, 'width' => 20, 'height' => 20],
+                ['class' => 'Green Chip', 'confidence' => 0.8, 'x' => 40, 'y' => 10, 'width' => 20, 'height' => 20],
+                ['class' => 'Black Chip', 'confidence' => 0.9, 'x' => 70, 'y' => 10, 'width' => 20, 'height' => 20],
+                ['class' => 'White Chip', 'confidence' => 0.9, 'x' => 100, 'y' => 10, 'width' => 20, 'height' => 20],
+                ['class' => 'White Chip', 'confidence' => 0.9, 'x' => 130, 'y' => 10, 'width' => 20, 'height' => 20],
+                ['class' => 'White Chip', 'confidence' => 0.9, 'x' => 160, 'y' => 10, 'width' => 20, 'height' => 20],
+                ['class' => 'Blue Chip', 'confidence' => 0.9, 'x' => 190, 'y' => 10, 'width' => 20, 'height' => 20],
+                ['class' => 'Red Chip', 'confidence' => 0.9, 'x' => 220, 'y' => 10, 'width' => 20, 'height' => 20],
             ],
         ], 200),
         'discord.com/api/v10/webhooks/*' => Http::response([], 200),
@@ -325,25 +314,26 @@ test('the photo job counts the chips with Gemini and stages the submission', fun
 
     $submission = ChipSubmission::query()->firstOrFail();
 
-    expect($submission->chips)->toBe(280)
-        ->and($submission->chip_counts)->toBe([100 => 2, 50 => 1, 25 => 0, 10 => 3, 5 => 0])
+    expect($submission->chips)->toBe(310)
+        ->and($submission->chip_counts)->toBe([100 => 2, 50 => 1, 25 => 1, 10 => 3, 5 => 1])
         ->and($submission->source)->toBe('discord')
         ->and($submission->registered_at)->toBeNull();
 
-    Http::assertSent(fn (Request $request): bool => str_contains($request->url(), 'generativelanguage.googleapis.com')
-        && $request->hasHeader('x-goog-api-key', 'test-key')
-        && data_get($request->data(), 'model') === 'gemini-3.8-flash'
-        && data_get($request->data(), 'input.1.type') === 'image');
+    Http::assertSent(fn (Request $request): bool => str_contains($request->url(), 'serverless.roboflow.com/fichas-poker-r5t24/1')
+        && $request->hasHeader('Authorization', 'Bearer test-key')
+        && str_contains($request->url(), 'confidence=0.4')
+        && str_contains($request->url(), 'overlap=0.3')
+        && $request->body() === base64_encode('fake-image'));
 
     Http::assertSent(fn (Request $request): bool => $request->method() === 'PATCH'
         && $request->url() === 'https://discord.com/api/v10/webhooks/app-1/interaction-token/messages/@original'
-        && str_contains((string) data_get($request->data(), 'content'), '280'));
+        && str_contains((string) data_get($request->data(), 'content'), '310'));
 });
 
-test('the photo job rethrows temporary Gemini failures so the queue can retry', function () {
+test('the photo job rethrows temporary Roboflow failures so the queue can retry', function () {
     config([
-        'services.gemini.key' => 'test-key',
-        'services.gemini.model' => 'gemini-3.8-flash',
+        'services.roboflow.key' => 'test-key',
+        'services.roboflow.model' => 'fichas-poker-r5t24/1',
     ]);
 
     $player = User::factory()->create(['discord_id' => 'discord-1']);
@@ -356,9 +346,9 @@ test('the photo job rethrows temporary Gemini failures so the queue can retry', 
 
     Http::fake([
         'cdn.discordapp.com/*' => Http::response('fake-image', 200, ['Content-Type' => 'image/jpeg']),
-        'generativelanguage.googleapis.com/*' => Http::response([
+        'serverless.roboflow.com/*' => Http::response([
             'error' => [
-                'message' => 'gemini-3.8-flash is currently experiencing high demand.',
+                'message' => 'The model is temporarily unavailable.',
                 'code' => 'service_unavailable',
             ],
         ], 503),
@@ -378,7 +368,7 @@ test('the photo job rethrows temporary Gemini failures so the queue can retry', 
     $job->withFakeQueueInteractions();
 
     expect(fn () => $job->handle(app(StageChipSubmission::class)))
-        ->toThrow(GeminiRequestException::class, 'Gemini request failed: 503');
+        ->toThrow(RoboflowRequestException::class, 'Roboflow request failed: 503');
 
     expect(ChipSubmission::query()->count())->toBe(0)
         ->and($job->tries)->toBe(4)
@@ -388,7 +378,7 @@ test('the photo job rethrows temporary Gemini failures so the queue can retry', 
         && str_contains((string) data_get($request->data(), 'content'), 'temporariamente indisponível'));
 });
 
-test('the photo job reports high demand after transient Gemini failures are exhausted', function () {
+test('the photo job reports high demand after transient Roboflow failures are exhausted', function () {
     Http::fake([
         'discord.com/api/v10/webhooks/*' => Http::response([], 200),
     ]);
@@ -403,16 +393,16 @@ test('the photo job reports high demand after transient Gemini failures are exha
         'app-1',
     );
 
-    $job->failed(new GeminiRequestException(503, '{"error":{"code":"service_unavailable"}}'));
+    $job->failed(new RoboflowRequestException(503, '{"error":{"code":"service_unavailable"}}'));
 
     Http::assertSent(fn (Request $request): bool => $request->method() === 'PATCH'
         && str_contains((string) data_get($request->data(), 'content'), 'alta demanda'));
 });
 
-test('the photo job sends a friendly error when Gemini returns invalid counts', function () {
+test('the photo job sends a friendly error when Roboflow returns unmapped classes', function () {
     config([
-        'services.gemini.key' => 'test-key',
-        'services.gemini.model' => 'gemini-3.8-flash',
+        'services.roboflow.key' => 'test-key',
+        'services.roboflow.model' => 'fichas-poker-r5t24/1',
     ]);
 
     $player = User::factory()->create(['discord_id' => 'discord-1']);
@@ -425,21 +415,9 @@ test('the photo job sends a friendly error when Gemini returns invalid counts', 
 
     Http::fake([
         'cdn.discordapp.com/*' => Http::response('fake-image', 200, ['Content-Type' => 'image/jpeg']),
-        'generativelanguage.googleapis.com/*' => Http::response([
-            'steps' => [
-                [
-                    'type' => 'model_output',
-                    'content' => [
-                        [
-                            'type' => 'text',
-                            'text' => json_encode([
-                                'counts' => ['100' => 'invalido'],
-                                'confidence' => 0.9,
-                                'notes' => '',
-                            ], JSON_THROW_ON_ERROR),
-                        ],
-                    ],
-                ],
+        'serverless.roboflow.com/*' => Http::response([
+            'predictions' => [
+                ['class' => 'Unknown Chip', 'confidence' => 0.9, 'x' => 10, 'y' => 10, 'width' => 20, 'height' => 20],
             ],
         ], 200),
         'discord.com/api/v10/webhooks/*' => Http::response([], 200),
