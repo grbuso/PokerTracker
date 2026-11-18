@@ -12,6 +12,7 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use RuntimeException;
 use Throwable;
 
@@ -269,6 +270,8 @@ class AnalyzeChipPhoto implements ShouldQueue
             $counts[$denomination]++;
         }
 
+        $this->logPredictions($predictions, $counts, $unknownClasses, $hasBoundingBoxes, $minimumConfidence);
+
         if ($predictions !== [] && ! $hasBoundingBoxes) {
             throw new RuntimeException('Roboflow returned a classification response; an object detection model is required.');
         }
@@ -282,6 +285,41 @@ class AnalyzeChipPhoto implements ShouldQueue
         }
 
         throw new RuntimeException('Roboflow did not identify any chips.');
+    }
+
+    /**
+     * @param  list<mixed>  $predictions
+     * @param  array<int, int>  $counts
+     * @param  list<string>  $unknownClasses
+     */
+    private function logPredictions(array $predictions, array $counts, array $unknownClasses, bool $hasBoundingBoxes, float $minimumConfidence): void
+    {
+        Log::info('Roboflow chip predictions', [
+            'model' => (string) config('services.roboflow.model'),
+            'configured_confidence' => (float) config('services.roboflow.confidence', 0.4),
+            'configured_overlap' => (float) config('services.roboflow.overlap', 0.3),
+            'minimum_confidence' => $minimumConfidence,
+            'prediction_count' => count($predictions),
+            'detections' => array_map(static function (mixed $prediction): array {
+                if (! is_array($prediction)) {
+                    return ['invalid' => true];
+                }
+
+                $confidence = $prediction['confidence'] ?? null;
+
+                return [
+                    'class' => $prediction['class'] ?? null,
+                    'confidence' => is_numeric($confidence) ? round((float) $confidence, 4) : null,
+                    'x' => $prediction['x'] ?? null,
+                    'y' => $prediction['y'] ?? null,
+                    'width' => $prediction['width'] ?? null,
+                    'height' => $prediction['height'] ?? null,
+                ];
+            }, $predictions),
+            'counts' => $counts,
+            'unknown_classes' => array_values(array_unique($unknownClasses)),
+            'has_bounding_boxes' => $hasBoundingBoxes,
+        ]);
     }
 
     private function denominationFor(string $class): ?int
