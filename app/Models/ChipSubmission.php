@@ -16,6 +16,7 @@ use Illuminate\Support\Carbon;
  * @property Carbon $recorded_on
  * @property int $chips
  * @property array<int, int>|null $chip_counts
+ * @property string|null $photo_url
  * @property string $source
  * @property Carbon|null $submitted_at
  * @property Carbon|null $registered_at
@@ -33,6 +34,7 @@ class ChipSubmission extends Model
         'recorded_on',
         'chips',
         'chip_counts',
+        'photo_url',
         'source',
         'submitted_at',
         'registered_at',

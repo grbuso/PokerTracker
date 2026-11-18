@@ -13,7 +13,7 @@ class StageChipSubmission
      *
      * @param  array<int, int>  $counts
      */
-    public function handle(Round $round, User $user, string $date, array $counts, int $total, string $source = 'discord'): ChipSubmission
+    public function handle(Round $round, User $user, string $date, array $counts, int $total, string $source = 'discord', ?string $photoUrl = null): ChipSubmission
     {
         $submission = ChipSubmission::query()
             ->where('round_id', $round->id)
@@ -31,13 +31,19 @@ class StageChipSubmission
         // gravada por uma versão antiga com data e hora.
         $submission->recorded_on = $date;
 
-        $submission->fill([
+        $attributes = [
             'chips' => $total,
             'chip_counts' => $counts,
             'source' => $source,
             'submitted_at' => now(),
             'registered_at' => null,
-        ]);
+        ];
+
+        if ($photoUrl !== null && $photoUrl !== '') {
+            $attributes['photo_url'] = $photoUrl;
+        }
+
+        $submission->fill($attributes);
 
         $submission->save();
 

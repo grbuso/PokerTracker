@@ -132,7 +132,7 @@ class AnalyzeChipPhoto implements ShouldQueue
                 throw new RuntimeException('Roboflow did not identify any chips.');
             }
 
-            $stageSubmission->handle($round, $user, $this->date, $counts, $total);
+            $stageSubmission->handle($round, $user, $this->date, $counts, $total, 'discord', $this->attachmentUrl);
         } catch (Throwable $exception) {
             report($exception);
 
@@ -380,9 +380,17 @@ class AnalyzeChipPhoto implements ShouldQueue
         }
 
         try {
+            $payload = ['content' => $content];
+
+            if ($this->attachmentUrl !== '') {
+                $payload['embeds'] = [[
+                    'image' => ['url' => $this->attachmentUrl],
+                ]];
+            }
+
             $response = Http::timeout(15)->patch(
                 "https://discord.com/api/v10/webhooks/{$this->applicationId}/{$this->interactionToken}/messages/@original",
-                ['content' => $content],
+                $payload,
             );
 
             if ($response->failed()) {

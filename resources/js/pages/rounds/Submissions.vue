@@ -44,6 +44,7 @@ type Submission = {
     chip_counts: Record<string, number> | null;
     source: string;
     submitted_at: string | null;
+    photo_url: string | null;
 };
 
 const props = defineProps<{
@@ -570,7 +571,22 @@ const confirmRemoveDate = (): void => {
                                                     }}
                                                 </AvatarFallback>
                                             </Avatar>
-                                            {{ player.name }}
+                                            <span>{{ player.name }}</span>
+                                            <a
+                                                v-if="submissionFor(player.id)?.photo_url"
+                                                :href="submissionFor(player.id)!.photo_url!"
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                class="inline-flex shrink-0"
+                                                title="Abrir foto enviada"
+                                            >
+                                                <img
+                                                    :src="submissionFor(player.id)!.photo_url!"
+                                                    alt="Foto enviada"
+                                                    class="size-8 rounded object-cover ring-1 ring-border transition hover:opacity-80"
+                                                    loading="lazy"
+                                                />
+                                            </a>
                                         </span>
                                     </td>
                                     <td

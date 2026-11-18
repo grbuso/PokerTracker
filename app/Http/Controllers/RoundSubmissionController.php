@@ -43,7 +43,7 @@ class RoundSubmissionController extends Controller
             ->where('round_id', $round->id)
             ->whereDate('recorded_on', $selectedDate)
             ->whereNull('registered_at')
-            ->get(['user_id', 'chips', 'chip_counts', 'source', 'submitted_at']);
+            ->get(['user_id', 'chips', 'chip_counts', 'source', 'submitted_at', 'photo_url']);
 
         return Inertia::render('rounds/Submissions', [
             'round' => $round,
