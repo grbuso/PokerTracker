@@ -148,7 +148,7 @@ const roundResult = (round: PlayerRound): { label: string; class: string } => {
     }
 
     return {
-        label: 'Participou',
+        label: 'Sobrevivente',
         class: 'border-border bg-muted text-muted-foreground',
     };
 };
@@ -305,7 +305,7 @@ const visitRound = (roundId: number) => {
                                     Fichas
                                 </th>
                                 <th class="px-3 py-2.5 text-center font-medium">
-                                    Resultado Individual
+                                    Status Individual
                                 </th>
                                 <th class="px-3 py-2.5 text-center font-medium">
                                     Status da Rodada
