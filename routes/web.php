@@ -6,6 +6,7 @@ use App\Http\Controllers\DiscordInteractionController;
 use App\Http\Controllers\PlayerProfileController;
 use App\Http\Controllers\RoundController;
 use App\Http\Controllers\RoundSubmissionController;
+use App\Support\HealthReport;
 use Illuminate\Support\Facades\Route;
 
 Route::inertia('/', 'Welcome')->name('home');
@@ -26,6 +27,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
 });
 
 Route::middleware(['auth', 'verified', 'can:manage-game'])->group(function () {
+    Route::get('health', fn () => response()->json(app(HealthReport::class)->toArray()))
+        ->name('health');
+
     Route::get('rounds/create', [RoundController::class, 'create'])->name('rounds.create');
     Route::post('rounds', [RoundController::class, 'store'])->name('rounds.store');
     Route::post('rounds/{round}/close', [RoundController::class, 'close'])

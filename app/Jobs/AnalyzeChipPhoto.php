@@ -2,6 +2,7 @@
 
 namespace App\Jobs;
 
+use App\Actions\SendAdminAlert;
 use App\Actions\StageChipSubmission;
 use App\Exceptions\RoboflowRequestException;
 use App\Models\ChipSnapshot;
@@ -11,8 +12,10 @@ use App\Support\ChipCounts;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 use RuntimeException;
 use Throwable;
 
@@ -37,10 +40,25 @@ class AnalyzeChipPhoto implements ShouldQueue
         public string $mimeType,
         public string $interactionToken,
         public string $applicationId,
-    ) {}
+        public string $correlationId = '',
+    ) {
+        if ($this->correlationId === '') {
+            $this->correlationId = (string) Str::uuid();
+        }
+    }
 
     public function handle(StageChipSubmission $stageSubmission): void
     {
+        $startedAt = microtime(true);
+
+        Cache::put('worker:last_seen', now()->toIso8601String(), now()->addMinutes(15));
+
+        Log::info('Chip photo analysis started', $this->logContext([
+            'date' => $this->date,
+            'attempt' => $this->attempts(),
+            'mime_type' => $this->mimeType,
+        ]));
+
         $round = Round::query()->find($this->roundId);
         $user = User::query()->find($this->userId);
 
@@ -137,6 +155,13 @@ class AnalyzeChipPhoto implements ShouldQueue
             report($exception);
 
             if ($this->isTransientFailure($exception)) {
+                Log::warning('Chip photo analysis transient failure', $this->logContext([
+                    'status' => 'retrying',
+                    'attempt' => $this->attempts(),
+                    'duration_ms' => (int) ((microtime(true) - $startedAt) * 1000),
+                    'error' => $exception->getMessage(),
+                ]));
+
                 if ($this->job !== null && $this->attempts() === 1) {
                     $this->editOriginalResponse(__('O serviço de IA está temporariamente indisponível. Ainda estou tentando contar as fichas...'));
                 }
@@ -156,6 +181,13 @@ class AnalyzeChipPhoto implements ShouldQueue
 
         $message .= "\n".__('Se algo estiver errado, use /fichas para corrigir antes do registro do dia.');
 
+        Log::info('Chip photo analysis finished', $this->logContext([
+            'status' => 'success',
+            'duration_ms' => (int) ((microtime(true) - $startedAt) * 1000),
+            'chips_total' => $total,
+            'counts' => $counts,
+        ]));
+
         $this->editOriginalResponse($message);
     }
 
@@ -164,6 +196,22 @@ class AnalyzeChipPhoto implements ShouldQueue
         if ($exception !== null && ! $this->isTransientFailure($exception)) {
             report($exception);
         }
+
+        Log::error('Chip photo analysis failed', $this->logContext([
+            'status' => 'failed',
+            'attempt' => $this->attempts(),
+            'exception' => $exception?->getMessage(),
+        ]));
+
+        app(SendAdminAlert::class)->handle(
+            'Falha ao analisar foto de fichas',
+            'O job de análise por foto falhou após as tentativas. O jogador já recebeu uma mensagem no Discord.',
+            $this->logContext([
+                'date' => $this->date,
+                'attempt' => $this->attempts(),
+                'error' => $exception?->getMessage() ?? 'erro desconhecido',
+            ]),
+        );
 
         $this->respondWithError($this->failureMessage($exception));
     }
@@ -294,7 +342,7 @@ class AnalyzeChipPhoto implements ShouldQueue
      */
     private function logPredictions(array $predictions, array $counts, array $unknownClasses, bool $hasBoundingBoxes, float $minimumConfidence): void
     {
-        Log::info('Roboflow chip predictions', [
+        Log::info('Roboflow chip predictions', $this->logContext([
             'model' => (string) config('services.roboflow.model'),
             'configured_confidence' => (float) config('services.roboflow.confidence', 0.4),
             'configured_overlap' => (float) config('services.roboflow.overlap', 0.3),
@@ -319,7 +367,20 @@ class AnalyzeChipPhoto implements ShouldQueue
             'counts' => $counts,
             'unknown_classes' => array_values(array_unique($unknownClasses)),
             'has_bounding_boxes' => $hasBoundingBoxes,
-        ]);
+        ]));
+    }
+
+    /**
+     * @param  array<string, mixed>  $extra
+     * @return array<string, mixed>
+     */
+    private function logContext(array $extra = []): array
+    {
+        return array_merge([
+            'correlation_id' => $this->correlationId,
+            'round_id' => $this->roundId,
+            'user_id' => $this->userId,
+        ], $extra);
     }
 
     private function denominationFor(string $class): ?int
@@ -394,10 +455,38 @@ class AnalyzeChipPhoto implements ShouldQueue
             );
 
             if ($response->failed()) {
-                report(new RuntimeException('Discord follow-up failed: '.$response->status().' '.$response->body()));
+                $error = 'Discord follow-up failed: '.$response->status().' '.$response->body();
+
+                report(new RuntimeException($error));
+
+                Log::error('Discord follow-up failed', $this->logContext([
+                    'status' => $response->status(),
+                    'body' => $response->body(),
+                ]));
+
+                app(SendAdminAlert::class)->handle(
+                    'Falha ao responder no Discord',
+                    'Não consegui editar a mensagem original do comando. O jogador pode ter ficado preso em "Enviando comando".',
+                    $this->logContext([
+                        'http_status' => $response->status(),
+                        'body' => $response->body(),
+                    ]),
+                );
             }
         } catch (Throwable $exception) {
             report($exception);
+
+            Log::error('Discord follow-up exception', $this->logContext([
+                'error' => $exception->getMessage(),
+            ]));
+
+            app(SendAdminAlert::class)->handle(
+                'Falha ao responder no Discord',
+                'Ocorreu uma exceção ao editar a mensagem original do comando.',
+                $this->logContext([
+                    'error' => $exception->getMessage(),
+                ]),
+            );
         }
     }
 }

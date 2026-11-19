@@ -41,6 +41,7 @@ return [
         'public_key' => env('DISCORD_PUBLIC_KEY'),
         'guild_id' => env('DISCORD_GUILD_ID'),
         'chips_channel_id' => env('DISCORD_CHIPS_CHANNEL_ID'),
+        'admin_alert_user_ids' => env('DISCORD_ADMIN_ALERT_USER_IDS', ''),
     ],
 
     'roboflow' => [

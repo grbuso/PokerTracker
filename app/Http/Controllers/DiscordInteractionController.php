@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Actions\SendAdminAlert;
 use App\Actions\StageChipSubmission;
 use App\Jobs\AnalyzeChipPhoto;
 use App\Models\ChipSnapshot;
@@ -12,6 +13,8 @@ use App\Support\ChipCounts;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 
 class DiscordInteractionController extends Controller
 {
@@ -146,6 +149,16 @@ class DiscordInteractionController extends Controller
             return $this->ephemeral(__('Não consegui iniciar a análise da foto. Tente novamente.'));
         }
 
+        $correlationId = (string) Str::uuid();
+
+        Log::info('Chip photo job dispatched', [
+            'correlation_id' => $correlationId,
+            'round_id' => $round->id,
+            'user_id' => $user->id,
+            'discord_id' => $this->discordUserId($payload),
+            'date' => today()->toDateString(),
+        ]);
+
         try {
             AnalyzeChipPhoto::dispatch(
                 $round->id,
@@ -155,9 +168,28 @@ class DiscordInteractionController extends Controller
                 is_string($mimeType) ? $mimeType : '',
                 $token,
                 $applicationId,
+                $correlationId,
             )->delay(now()->addSeconds(2));
         } catch (\Throwable $exception) {
             report($exception);
+
+            Log::error('Chip photo job dispatch failed', [
+                'correlation_id' => $correlationId,
+                'round_id' => $round->id,
+                'user_id' => $user->id,
+                'error' => $exception->getMessage(),
+            ]);
+
+            app(SendAdminAlert::class)->handle(
+                'Falha ao enfileirar análise de foto',
+                'O comando /fichas-foto não conseguiu entrar na fila.',
+                [
+                    'correlation_id' => $correlationId,
+                    'round_id' => $round->id,
+                    'user_id' => $user->id,
+                    'error' => $exception->getMessage(),
+                ],
+            );
 
             return $this->ephemeral(__('Não foi possível iniciar a análise agora. Tente novamente em instantes.'));
         }

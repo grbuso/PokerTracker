@@ -19,6 +19,7 @@ use Illuminate\Support\Carbon;
  * @property-read Collection<int, User> $players
  * @property-read Collection<int, ChipSnapshot> $snapshots
  * @property-read Collection<int, ChipSubmission> $submissions
+ * @property-read RoundUser $pivot
  */
 class Round extends Model
 {
